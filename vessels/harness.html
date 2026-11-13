@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>vessel harness</title>
+<style>html,body{margin:0;height:100%;background:linear-gradient(#eef0f1,#c9ced2)}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script>
+</head><body>
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { makeCtx } from './ctx.js';
+const id = new URLSearchParams(location.search).get('v');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(1); renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.6;
+scene.add(new THREE.HemisphereLight(0xe9eef4, 0x7d776c, 1.1));
+const sun = new THREE.DirectionalLight(0xfff3e2, 2.0); sun.position.set(2.5, 5, 4); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -1.5, right: 1.5, top: 1.5, bottom: -1.5 }); sun.shadow.bias = -0.0004;
+scene.add(sun);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshStandardMaterial({ color: 0xc3c2bd, roughness: 0.92 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+const grid = new THREE.GridHelper(2, 20, 0x888888, 0xaaaaaa); grid.position.y = 0.001; scene.add(grid); // 100 mm squares
+const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.01, 50);
+const mod = await import('./' + id + '.js?' + Date.now());
+const ctx = makeCtx(THREE);
+const obj = mod.build(THREE, ctx, mod.defaultOptions || {});
+obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+scene.add(obj);
+obj.updateMatrixWorld(true);
+const bb = new THREE.Box3().setFromObject(obj, true), core = new THREE.Box3();
+obj.traverse((o) => { if (o.isMesh && o.userData.core) core.union(new THREE.Box3().setFromObject(o, true)); });
+let tris = 0, meshes = 0;
+obj.traverse((o) => { if (o.isMesh) { meshes++; const g = o.geometry; const n = g.index ? g.index.count / 3 : g.attributes.position.count / 3; tris += o.isInstancedMesh ? n * o.count : n; } });
+const size = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
+const r = Math.max(size.x, size.y, size.z);
+window.stats = { meta: mod.meta, bbox: { min: bb.min.toArray().map((v) => +v.toFixed(4)), max: bb.max.toArray().map((v) => +v.toFixed(4)), size: size.toArray().map((v) => Math.round(v * 1000)) }, core: core.isEmpty() ? null : { size: core.getSize(new THREE.Vector3()).toArray().map((v) => Math.round(v * 1000)) }, tris: Math.round(tris), meshes };
+const views = {
+  front: [c.x, c.y, c.z + r * 2.6], threeq: [c.x + r * 1.7, c.y + r * 0.9, c.z + r * 1.9], back: [c.x - r * 1.6, c.y + r * 0.5, c.z - r * 2.0],
+  top: [c.x, c.y + r * 2.8, c.z + 0.01], low: [c.x + r * 0.9, r * 0.15, c.z + r * 1.6], side: [c.x + r * 2.6, c.y, c.z],
+};
+window.setView = (name, zoom = 1, target) => {
+  const p = views[name] || name; const t = target ? new THREE.Vector3(...target) : c;
+  camera.position.set(t.x + (p[0] - c.x) / zoom, t.y + (p[1] - c.y) / zoom, t.z + (p[2] - c.z) / zoom); camera.lookAt(t);
+  renderer.render(scene, camera);
+};
+window.setView('threeq');
+window.ready = true;
+</script></body></html>

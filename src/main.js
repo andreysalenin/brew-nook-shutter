@@ -78,13 +78,20 @@ const slotFor = (spec, hmm) => clamp(Math.round((hmm / 1000 - spec.beamTop - spe
 const deckTopY = (spec, lv) => levelY(spec, lv.slot) + (lv.deck === 'acacia' ? ACACIA_T - spec.deckT : 0);
 
 // Aluminium roller shutter curtains. t = slat thickness, kg = curtain mass per m².
+// From the brochures: guide w = across the opening, d = front to back; boxes = [pelmet, max shutter height].
+// Ozroll doesn't list slat thickness, guide size or pelmet heights in its sheet: those are estimates (est).
 const SLATS = {
-  s40: { label: '40 mm roll-formed, foam filled', pitch: 0.040, t: 0.009, kg: 3.8 },
-  s55: { label: '55 mm roll-formed, foam filled', pitch: 0.055, t: 0.014, kg: 4.6 },
-  x36: { label: '36 mm extruded, security grade', pitch: 0.036, t: 0.0097, kg: 7.5 },
+  oz40: { label: 'Ozroll Rollashield 40 mm curved (AR400)', short: 'Ozroll 40', pitch: 0.040, t: 0.009, kg: 4.0, guide: { w: 0.053, d: 0.022 }, est: true, maxArea: 8, manual: 'strap winder or spring assist' },
+  cw42: { label: 'CW Products 42 mm double line', short: 'CW 42', pitch: 0.042, t: 0.0085, kg: 3.2, guide: { w: 0.053, d: 0.022 }, boxes: [[0.150, 1.3], [0.165, 1.7], [0.180, 2.2], [0.205, 2.6]], maxArea: 8, manual: 'spring loaded with key lock, or strap/cord winder up to 20 kg' },
+  cw55: { label: 'CW Products 55 mm widespan', short: 'CW 55', pitch: 0.055, t: 0.012, kg: 4.0, guide: { w: 0.068, d: 0.025 }, boxes: [[0.180, 1.85], [0.205, 2.4], [0.230, 3.0]], maxArea: 10, manual: 'spring loaded with key lock, or steel cable winder up to 50 kg' },
+  cw77: { label: 'CW Products 77 mm widespan', short: 'CW 77', pitch: 0.077, t: 0.0185, kg: 5.0, guide: { w: 0.105, d: 0.037 }, boxes: [[0.250, 2.0], [0.300, 3.0]], inclBox: true, maxArea: 15, manual: null },
 };
 const BOX_SIZES = [0.150, 0.165, 0.180, 0.205, 0.230, 0.250, 0.300];
 function headboxFor(drop, slat) {
+  if (slat.boxes) {
+    const hit = slat.boxes.find(([b, h]) => (slat.inclBox ? drop + b : drop) <= h + 1e-6);
+    return (hit || slat.boxes[slat.boxes.length - 1])[0];
+  }
   const roll = Math.sqrt(0.07 ** 2 + (4 * slat.t * Math.max(drop, 0.5)) / PI) + 0.02;
   return BOX_SIZES.find((b) => b >= roll) ?? 0.3;
 }
@@ -104,7 +111,7 @@ const MOUNTS = {
   },
   face: {
     letter: 'C', name: 'Posts, face-fixed frames, headbox outside', short: 'posts + outside box',
-    blurb: 'Two stainless posts just inside the opening, fixed only to the slab and the ceiling: a 50 × 50 SHS wedged into the corner on the left and a 100 × 50 RHS against the brick on the right. The shutter\'s side frames screw onto the posts\' outside faces, overlapping them by 30 mm, and the headbox sits on top of the frames above the opening, in front of the roof line. Nothing is fixed into either wall. The right post carries the 1.5" pass-throughs, set off-centre toward the brick so the clamps clear the frame.',
+    blurb: 'Two stainless posts just inside the opening, fixed only to the slab and the ceiling: a 50 × 50 SHS wedged into the corner on the left and a 100 × 50 RHS against the brick on the right. The shutter\'s side frames screw onto the posts\' outside faces, overlapping them by 30 mm, and the headbox sits on top of the frames above the opening, in front of the roof line, held only at its flush sides: each end cap is screwed through the side frame into the post, with no clips to the wall. Nothing is fixed into either wall. The right post carries the 1.5" pass-throughs, set off-centre toward the brick so the clamps clear the frame.',
     pros: ['Nothing into the shared wall or the brick: posts are slab and ceiling fixed', 'Full clear height: the headbox is outside', 'A standard face-fit shutter: the installer screws the frames onto two flat stainless faces', 'Manual spring drive: nothing electrical in the rain'],
     cons: ['Each post needs two screws up into solid ceiling framing (add blocking if needed)', 'The headbox is out in the rain (fine for a manual shutter)'],
   },
@@ -113,7 +120,7 @@ const MOUNTS = {
 
 const SWATCHES = [
   ['#E4E2D5', 'Surfmist'], ['#F3F2EE', 'Pearl white'], ['#E7DCBF', 'Classic Cream'],
-  ['#BEC0BB', 'Shale Grey'], ['#4C4D47', 'Woodland Grey'], ['#323233', 'Monument'],
+  ['#BEC0BB', 'Shale Grey'], ['#4C4D47', 'Woodland Grey'], ['#323233', 'Monument'], ['#2B2C2C', 'Night Sky'],
 ];
 
 const KINDS = {
@@ -139,12 +146,12 @@ function defaults() {
   const full = (id, slot, deck, extra = {}) => ({ id, slot, deck, from: 0, to: 1500, front: true, back: true, ...extra });
   const fullB = (id, slot, deck, extra = {}) => ({ id, slot, deck, from: 0, to: 1200, front: true, back: true, ...extra });
   return {
-    v: 16,
+    v: 17,
     nook: { width: 1621, depth: 3130, height: 2625, fall: 50, ret: 130, retStep: 21, fenceToBrick: 1740 },
     door: { show: true, fromBack: 520, width: 820, window: 600, windowH: 1020, hinge: 'back', opens: 'laundry' },
     drain: { show: true, offset: 185, width: 110 },
     dump: { show: true, connect: 'tankB', outside: 'spout' },
-    shutter: { color: '#E4E2D5', open: 50, slat: 's55', setback: 90, motor: 'right', drive: 'spring', inside: false, mount: 'face', frame: 'alu', partyFix: false },
+    shutter: { color: '#E4E2D5', boxColor: '#2B2C2C', open: 50, slat: 'cw55', setback: 90, motor: 'right', drive: 'spring', inside: false, mount: 'face', frame: 'alu', partyFix: false },
     racks: {
       green: {
         x: 10, z: 5,
@@ -307,10 +314,19 @@ function migrate(c) {
     c.shutter = { ...(c.shutter || {}), drive: 'spring', mount: 'face' };
     c.v = 16;
   }
-  if (!c || typeof c !== 'object' || c.v !== 16) return d;
+  if (c && typeof c === 'object' && c.v === 16) {
+    // v16 -> v17: slats are the brochure products; the headbox gets its own colour (Night Sky)
+    c = JSON.parse(JSON.stringify(c));
+    const map = { s40: 'oz40', s55: 'cw55', x36: 'cw55' };
+    c.shutter = { ...(c.shutter || {}), boxColor: '#2B2C2C' };
+    if (map[c.shutter.slat]) c.shutter.slat = map[c.shutter.slat];
+    c.v = 17;
+  }
+  if (!c || typeof c !== 'object' || c.v !== 17) return d;
   const merged = { ...d, ...c };
   for (const k of ['nook', 'door', 'drain', 'dump', 'shutter', 'view']) merged[k] = { ...d[k], ...(c[k] || {}) };
   if (!MOUNTS[merged.shutter.mount]) merged.shutter.mount = 'wall';
+  if (!SLATS[merged.shutter.slat]) merged.shutter.slat = 'cw55';
   merged.racks = {
     green: { ...d.racks.green, ...(c.racks?.green || {}) },
     blue: { ...d.racks.blue, ...(c.racks?.blue || {}) },
@@ -727,6 +743,8 @@ function makeMaterials() {
   MAT.arrow = new THREE.MeshBasicMaterial({ color: 0xe0601c, transparent: true, opacity: 0.88, polygonOffset: true, polygonOffsetFactor: -4, depthWrite: false });
   MAT.shutter = S({ color: 0xe4e2d5, roughness: 0.48, metalness: 0.15 });
   MAT.shutterGhost = S({ color: 0xe4e2d5, roughness: 0.48, metalness: 0.15, transparent: true, opacity: 0.18, depthWrite: false });
+  MAT.headbox = S({ color: 0x2b2c2c, roughness: 0.5, metalness: 0.15 });
+  MAT.headboxGhost = S({ color: 0x2b2c2c, roughness: 0.5, metalness: 0.15, transparent: true, opacity: 0.2, depthWrite: false });
   MAT.roll = S({ color: 0xd9d7ca, roughness: 0.5, metalness: 0.15 });
   MAT.dimLine = new THREE.LineBasicMaterial({ color: 0x2c3136, transparent: true, opacity: 0.85, depthTest: false });
   MAT.dimAccent = new THREE.LineBasicMaterial({ color: 0xd9571a, depthTest: false });
@@ -1816,12 +1834,12 @@ const curtain = { inst: null, bar: null, roll: null, motor: null };
 function shutterLayout() {
   const { W, D, H } = dimsM();
   const s = cfg.shutter;
-  const slat = SLATS[s.slat] || SLATS.s55;
-  const gp = 0.025, gd = 0.055;
+  const slat = SLATS[s.slat] || SLATS.cw55;
+  const gp = 0.025, gd = slat.guide.d;
   const L = { mount: s.mount, W, D, H, gp, gd, slat };
   if (s.mount === 'face') {
     // posts just inside the opening, outside faces flush with the start of the white wall return
-    const pd = POST_C.d, ov = POST_C.overlap, fw = POST_C.frameW, fd = POST_C.frameD;
+    const pd = POST_C.d, ov = POST_C.overlap, fw = slat.guide.w, fd = slat.guide.d;
     const lx0 = 0.003, lx1 = lx0 + POST_C.left, rx0 = W - POST_C.right;
     L.zs = D + fd / 2;
     L.floorS = floorY(L.zs);
@@ -1895,7 +1913,7 @@ function tangentFrom(R, Rout) {
   // tangent from the top of the guide slot (qz, qy) onto the roll, on the side the curtain winds from
   const dz = R.qz - R.cz, dy = R.qy - R.cy, d = Math.hypot(dz, dy);
   const beta = Math.atan2(dy, dz);
-  const phiT = d > Rout ? beta + Math.acos(Rout / d) : beta;
+  const phiT = d > Rout ? beta + R.dir * Math.acos(Rout / d) : beta;
   const tz = R.cz + Rout * Math.cos(phiT), ty = R.cy + Rout * Math.sin(phiT);
   return { phiT, tz, ty, lt: Math.hypot(tz - R.qz, ty - R.qy) };
 }
@@ -1916,8 +1934,9 @@ function makeRoll(L) {
   const t = L.slat.t, p = L.slat.pitch, b = L.box;
   const R = {
     cz: b.z0 + L.B / 2, cy: b.y0 + L.B / 2, qz: L.zs, qy: L.curtainTop,
+    dir: 1, // the curtain winds with its convex (street) face outward, so the concave back sits on the roll
     rBase: 0.035, r1: 0.035 + 0.4 * t + 0.0004,
-    k: 0.9 * t + 0.0008 + (p * p) / (8 * 0.08), // slat thickness + polygon sag + a hair of clearance
+    k: t + 0.0006, // roll-tight: each wrap is one slat thickness plus a hair (curved slats sit snug on the roll)
   };
   // length: hanging drop + run up to the roll + 3/4 of a wrap left on the tube when fully closed
   const tc = tangentFrom(R, R.r1 + R.k);
@@ -1966,6 +1985,8 @@ function buildShutter() {
   MAT.shutter.color.set(cfg.shutter.color);
   MAT.shutterGhost.color.set(cfg.shutter.color);
   MAT.roll.color.set(cfg.shutter.color).multiplyScalar(0.92);
+  MAT.headbox.color.set(cfg.shutter.boxColor || cfg.shutter.color);
+  MAT.headboxGhost.color.set(cfg.shutter.boxColor || cfg.shutter.color);
   const inside = cfg.shutter.inside;
   const grp = new THREE.Group();
   grp.userData.role = 'shutter';
@@ -1974,12 +1995,12 @@ function buildShutter() {
 
   // Headbox
   const bx = L.box;
-  const hb = mesh(headboxGeo(L.B, bx.x1 - bx.x0, bx.chamfer), inside ? MAT.shutterGhost : MAT.shutter);
+  const hb = mesh(headboxGeo(L.B, bx.x1 - bx.x0, bx.chamfer), inside ? MAT.headboxGhost : MAT.headbox);
   hb.position.set(bx.x0, bx.y0, bx.z0);
   tip(hb, `Headbox ${Math.round(L.B * 1000)} mm`, L.spring ? 'Holds the rolled curtain on its spring-balanced axle' : `Holds the rolled curtain and the tubular motor (${cfg.shutter.motor} end)`);
   grp.add(hb);
   for (const x of [bx.x0 - 0.002, bx.x1 + 0.002]) {
-    const cap = mesh(headboxGeo(L.B + 0.004, 0.004, bx.chamfer), inside ? MAT.shutterGhost : MAT.shutter);
+    const cap = mesh(headboxGeo(L.B + 0.004, 0.004, bx.chamfer), inside ? MAT.headboxGhost : MAT.headbox);
     cap.position.set(x - 0.002, bx.y0 - 0.002, bx.z0 - 0.002);
     grp.add(cap);
   }
@@ -2101,28 +2122,18 @@ function buildShutter() {
     }
   }
   if (L.mount === 'face') {
-    for (const p of [L.postL, L.dumpJamb]) {
-      // the post's top cap runs forward as a 5 mm tab under the headbox end; two screws up into the end cap
-      const x0 = Math.max(p.x0, bx.x0), x1 = Math.min(p.x1, bx.x1);
-      const br = new THREE.Group();
-      br.userData.role = 'struct';
-      br.add(boxAt(x0, H, p.z0, x1, H + 0.005, bx.z0 + L.B * 0.75, MAT.ssDull));
-      for (const z of [bx.z0 + L.B * 0.25, bx.z0 + L.B * 0.6]) {
-        const sc = cylBetween(0.003, V((x0 + x1) / 2, H - 0.004, z), V((x0 + x1) / 2, H + 0.03, z), MAT.ss, 8);
+    // the headbox is held only at its flush sides: each end cap's flange drops over the top of the side
+    // frame and is screwed through it into the post. Nothing fixes it to the wall or the beam behind.
+    for (const gd of L.guides) {
+      const g = new THREE.Group();
+      g.add(boxAt(gd.x0, H - 0.07, gd.z1, gd.x1, H, gd.z1 + 0.003, MAT.headbox));
+      for (const y of [H - 0.025, H - 0.052]) {
+        const sc = cylBetween(0.003, V(gd.fixX, y, gd.z1 + 0.004), V(gd.fixX, y, gd.z0 - 0.02), MAT.ss, 8);
         sc.userData.role = 'fix';
-        br.add(sc);
+        g.add(sc);
       }
-      tip(br, 'Headbox tab', '5 mm 316 top cap on the post, run forward under the headbox end; two screws up into the end cap carry the headbox');
-      grp.add(br);
-    }
-    for (const fx of [0.3, 0.7]) {
-      const b = new THREE.Group();
-      b.userData.role = 'fix';
-      const x = bx.x0 + (bx.x1 - bx.x0) * fx, y = bx.y0 + L.B * 0.6;
-      b.add(cylBetween(0.0055, V(x, y, bx.z0 + 0.004), V(x, y, bx.z0 + 0.001), MAT.ss, 12));
-      b.add(cylBetween(0.003, V(x, y, bx.z0 + 0.004), V(x, y, bx.z0 - 0.07), MAT.ss, 8));
-      tip(b, 'Headbox back screw', '14g 316 screw through the back of the headbox into the beam above the opening');
-      grp.add(b);
+      tip(g, 'Headbox end-cap flange', 'The end cap drops 70 mm over the top of the side frame; two screws through both into the post. This is all that holds the headbox: no clips to the wall.');
+      grp.add(g);
     }
   } else if (L.dumpJamb) {
     const bx2 = L.box;
@@ -2335,7 +2346,7 @@ function updateCurtain() {
     if (s <= w.lt) { const f = w.lt > 0 ? s / w.lt : 0; o.z = L.zs + (w.tz - L.zs) * f; o.y = L.curtainTop + (w.ty - L.curtainTop) * f; return; }
     s -= w.lt;
     const psi = arcInv(Rl, Math.max(0, w.W - s));
-    const phi = w.phiT + (w.psiMax - psi);
+    const phi = w.phiT + Rl.dir * (w.psiMax - psi);
     const r = Rl.r1 + (Rl.k * psi) / (2 * PI);
     o.z = Rl.cz + r * Math.cos(phi); o.y = Rl.cy + r * Math.sin(phi);
   };
@@ -2797,10 +2808,20 @@ function runChecks() {
   if (L.clearH < 2.04) add('warn', `Clear height under the headbox is only ${ch} mm.`);
   if (shutterClear) add('ok', `The shutter, headbox and ${L.mount === 'portal' ? 'portal frame' : L.mount === 'wall' ? 'jamb' : 'brackets'} are clear of the racks and gear.`);
   if (shelvesOk) add('ok', 'Every item fits its shelf: no gear passes through a deck, beam or brace.');
+  {
+    const sl = L.slat, drop = L.hangMax;
+    if (sl.boxes) {
+      const maxH = sl.boxes[sl.boxes.length - 1][1], need = sl.inclBox ? drop + L.B : drop;
+      if (need > maxH + 1e-6) add('bad', `${sl.short} tops out at ${Math.round(maxH * 1000)} mm${sl.inclBox ? ' including the pelmet' : ''}; this opening needs ${Math.round(need * 1000)} mm.`);
+    }
+    if (L.area > sl.maxArea) add('bad', `The curtain is ${L.area.toFixed(1)} m²; ${sl.short} is rated to ${sl.maxArea} m².`);
+    if (L.spring && !sl.manual) add('bad', `CW lists only motorised controls for the 77 mm widespan: no spring or winder option.`);
+    else if (L.spring) add('ok', `${sl.short} manual options: ${sl.manual}. Curtain about ${Math.round(L.kg)} kg.`);
+  }
   if (L.mount === 'face') {
     const j = L.dumpJamb, gR = L.guides[1];
     const clampGap = Math.round(((j.xc - 0.03) - gR.x1) * 1000);
-    add('ok', `Nothing is fixed into either wall: both posts are anchored to the slab and screwed into the ceiling framing; the headbox sits on the side frames and post brackets, with two screws into the beam above.`);
+    add('ok', `Nothing is fixed into either wall: both posts are anchored to the slab and screwed into the ceiling framing; the headbox is held only at its flush sides, by its end caps screwed through the side frames into the posts.`);
     add(clampGap >= 3 ? 'ok' : 'bad', `Side frames overlap the posts' outside faces by ${Math.round(POST_C.overlap * 1000)} mm (30 mm needed). The tri-clamp pass-throughs sit ${Math.round((L.W - j.xc) * 1000)} mm off the brick, ${clampGap} mm clear of the right frame, with their clamps out in front of it. Frame fixings ${L.guideFix ? L.guideFix.n + ' a side, ' + Math.round(L.guideFix.pitch * 1000) + ' mm apart' : ''}, 100 mm off the floor and the headbox.`);
   } else if (cfg.shutter.partyFix === false) add('ok', L.leftPost ? 'Nothing is fixed into the shared wall: the left post sits in the corner, anchored to the slab and cleated into the ceiling framing.' : 'Nothing is fixed into the shared wall: the left side stands on the slab and is held at the top by the ceiling framing.');
   else add('info', 'The left side is anchored into the wall shared with the other unit. In the ACT that needs the owners corporation’s permission, as does the shutter itself under the default rules.');
@@ -2924,8 +2945,9 @@ function updateShutterReadout() {
   if (!el || !L) return;
   el.replaceChildren(
     h('li', {}, h('b', {}, 'Curtain '), `${Math.round((L.cx1 - L.cx0) * 1000)} × ${Math.round((L.hangMax + 0.05) * 1000)} · ${L.area.toFixed(1)} m² · about ${Math.round(L.kg)} kg`),
-    h('li', {}, h('b', {}, 'Headbox '), `${Math.round(L.B * 1000)} × ${Math.round(L.B * 1000)} for a ${Math.round(L.hangMax * 1000)} mm drop`),
-    h('li', {}, h('b', {}, 'Guides '), `${Math.round(L.gp * 1000)} × ${Math.round(L.gd * 1000)} mm extruded aluminium, pile-lined`),
+    h('li', {}, h('b', {}, 'Headbox '), `${Math.round(L.B * 1000)} pelmet for a ${Math.round(L.hangMax * 1000)} mm drop${L.slat.boxes ? '' : ' (sized from the roll; Ozroll sheet has no table)'}`),
+    h('li', {}, h('b', {}, 'Slats '), `${L.slat.label}: ${Math.round(L.slat.pitch * 1000)} mm cover, ${L.slat.t * 1000} mm thick${L.slat.est ? ' (est.)' : ''}, ${L.slat.kg} kg/m², foam filled`),
+    h('li', {}, h('b', {}, 'Guides '), `${Math.round(L.slat.guide.w * 1000)} × ${Math.round(L.slat.guide.d * 1000)} mm${L.slat.est ? ' (est.)' : ''}, pile-lined`),
 
     h('li', {}, h('b', {}, 'Floor at the shutter line '), `${Math.round(L.floorS * 1000)} mm above the opening edge`),
   );
@@ -2952,7 +2974,7 @@ function updateShutterReadout() {
         h('li', {}, h('b', {}, j.rhs ? 'Frame face ' : 'Guide face '), `M6 316 rivnuts down the ${j.rhs ? 'outside face, 15 mm from the opening-side edge,' : 'opening-side face'} to suit the guide fixings: 100 mm off the floor and the headbox, ${L.guideFix ? Math.round(L.guideFix.pitch * 1000) : 450} mm apart`),
         h('li', {}, h('b', {}, 'You add '), cfg.dump.outside === 'cap' ? '5 × 1.5" TC end caps (one closes the hose line outside, four on the spares) and 6 × 1.5" TC clamps and seals (one for the hose)' : `${L.dumpOut && L.dumpOut.spool ? 'a ' + Math.round(L.dumpOut.spool / 0.0254) + '" 1.5" TC spool, ' : ''}a KegLand 1.5" TC 90° elbow (KL10634), 4 × 1.5" TC end caps for the spares, and ${(L.dumpOut && L.dumpOut.spool ? 2 : 1) + 5} × 1.5" TC clamps and seals (one for the hose)`),
       ),
-      h('p', { class: 'note' }, L.mount === 'face' ? `Tell the shutter company: face-fit side frames screwed onto two stainless posts (30 mm overlap, M6 rivnuts provided), headbox outside above the opening on the frames, no ceiling fixing; manual ${L.spring ? 'spring-balanced with key lock' : 'drive'}. Clear width ${Math.round(L.clearW * 1000)} mm between the frames.` : `Tell the shutter company: reveal-fit, guides to the floor both sides, standard bottom bar. Clear width ${Math.round(L.clearW * 1000)} mm between ${L.leftPost ? 'a 75 × 75 post on the left, wedged into the corner (slab and ceiling fixed, not fixed to the wall)' : L.mount === 'portal' ? 'the portal frame post on the left' : 'a 50 × 50 × 3 aluminium jamb on the left (anchored through the weatherboard into brick)'} and the 75 × 75 post on the right.`),
+      h('p', { class: 'note' }, L.mount === 'face' ? `Tell the shutter company: face-fit side frames screwed onto two stainless posts (30 mm overlap, M6 rivnuts provided), headbox outside above the opening, held only by its end caps on the side frames (no wall clips); manual ${L.spring ? 'spring-balanced with key lock' : 'drive'}. Clear width ${Math.round(L.clearW * 1000)} mm between the frames.` : `Tell the shutter company: reveal-fit, guides to the floor both sides, standard bottom bar. Clear width ${Math.round(L.clearW * 1000)} mm between ${L.leftPost ? 'a 75 × 75 post on the left, wedged into the corner (slab and ceiling fixed, not fixed to the wall)' : L.mount === 'portal' ? 'the portal frame post on the left' : 'a 50 × 50 × 3 aluminium jamb on the left (anchored through the weatherboard into brick)'} and the 75 × 75 post on the right.`),
     );
   }
   document.querySelectorAll('#mountSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.m === cfg.shutter.mount)));
@@ -2991,8 +3013,26 @@ function buildPanel() {
   sw.append(colorIn, swName);
   syncers.push(syncSw);
   syncSw();
+  const bsw = h('div', { class: 'swatches', role: 'group', 'aria-label': 'Headbox colour' });
+  const boxIn = h('input', { type: 'color', id: 'shBoxColor', 'aria-label': 'Custom headbox colour' });
+  const boxName = h('span', { class: 'swatch-name' });
+  const syncBox = () => {
+    const c = (cfg.shutter.boxColor || cfg.shutter.color).toLowerCase();
+    boxIn.value = c;
+    const hit = SWATCHES.find(([x]) => x.toLowerCase() === c);
+    boxName.textContent = hit ? hit[1] : c.toUpperCase();
+    bsw.querySelectorAll('.swatch').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.c.toLowerCase() === c)));
+  };
+  for (const [c, n] of SWATCHES) {
+    bsw.append(h('button', { type: 'button', class: 'swatch', style: `background:${c}`, 'data-c': c, title: n, 'aria-label': n, onclick: () => { cfg.shutter.boxColor = c; applyColor(); syncBox(); } }));
+  }
+  boxIn.addEventListener('input', () => { cfg.shutter.boxColor = boxIn.value; applyColor(); syncBox(); });
+  bsw.append(boxIn, boxName);
+  syncers.push(syncBox);
+  syncBox();
   root.append(section('shutter', 'Roller shutter', 'aluminium', true, [
-    h('div', { class: 'row2' }, h('label', { for: 'shColor' }, 'Colour'), sw),
+    h('div', { class: 'row2' }, h('label', { for: 'shColor' }, 'Slats & frames'), sw),
+    h('div', { class: 'row2' }, h('label', { for: 'shBoxColor' }, 'Headbox'), bsw),
     selRow('shSlat', 'Slats', Object.entries(SLATS).map(([k, s]) => [k, s.label]), () => cfg.shutter.slat, (v) => { cfg.shutter.slat = v; schedule('shutter'); }),
     h('div', { id: 'setbackRow' }, numRow('shSetback', 'Line in from opening', { min: 0, max: 400, step: 5, get: () => cfg.shutter.setback, set: (v) => { cfg.shutter.setback = v; schedule('shutter'); } })),
     selRow('shDrive', 'Drive', [['spring', 'Manual: spring balanced, key lock'], ['motor', 'Motorised: tubular motor + switch']], () => cfg.shutter.drive, (v) => { cfg.shutter.drive = v; schedule('shutter'); }),
@@ -3205,6 +3245,8 @@ function renderItems() {
 }
 
 function applyColor() {
+  MAT.headbox.color.set(cfg.shutter.boxColor || cfg.shutter.color);
+  MAT.headboxGhost.color.set(cfg.shutter.boxColor || cfg.shutter.color);
   MAT.shutter.color.set(cfg.shutter.color);
   MAT.shutterGhost.color.set(cfg.shutter.color);
   MAT.roll.color.set(cfg.shutter.color).multiplyScalar(0.92);

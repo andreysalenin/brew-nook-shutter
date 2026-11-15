@@ -6928,15 +6928,19 @@ function buildLeftPostC(L, grp) {
   const post = new THREE.Group();
   post.userData.role = 'struct';
   const fb = p.yb ?? L.floorS;
-  post.add(boxAt(p.x0, fb + 0.006, p.z0, p.x1, p.y1 ?? H, p.z1, fin));
-  // 6 mm base plate: tab inside the post with two slab anchors
-  post.add(boxAt(p.x0, fb, p.z0 - 0.07, p.x1 + 0.03, fb + 0.006, p.z1, fin));
-  for (const [x, z] of [[p.x0 + 0.02, p.z0 - 0.035], [p.x1 + 0.012, p.z0 + 0.025]]) {
+  post.add(boxAt(p.x0, fb + 0.008, p.z0, p.x1, p.y1 ?? H, p.z1, fin));
+  // 8 mm base plate under the leg, with an inside tab that also fills the corner back to the weatherboard
+  // (behind the white wall step); its two anchors sit on the same line as the right leg's
+  const cx0 = 0.002, ext = 0.06, az = p.z0 - 0.034;
+  post.add(boxAt(p.x0, fb, p.z0, p.x1, fb + 0.008, p.z1, fin));
+  post.add(boxAt(cx0, fb, p.z0 - ext, p.x1, fb + 0.008, p.z0, fin));
+  post.add(boxAt(cx0, fb, p.z0, p.x0, fb + 0.008, Math.min(p.z1, dimsM().D - 0.001), fin));
+  for (const x of [cx0 + 0.016, p.x1 - 0.014]) {
     const a = new THREE.Group();
     a.userData.role = 'fix';
-    a.add(cyl(0.008, 0.008, 0.006, MAT.ss, x, fb + 0.009, z, 6));
-    a.add(cylBetween(0.0045, V(x, fb + 0.012, z), V(x, fb - 0.07, z), MAT.ss, 8));
-    tip(a, 'Slab anchor', 'M8 316 anchor through the base tab, 70 mm into the slab');
+    a.add(cyl(0.009, 0.009, 0.008, MAT.ss, x, fb + 0.012, az, 6));
+    a.add(cylBetween(0.005, V(x, fb + 0.016, az), V(x, fb - 0.08, az), MAT.ss, 8));
+    tip(a, 'Slab anchor', `M10 316 anchor through the inside tab, 80 mm into the slab, in line with the right leg's anchors`);
     post.add(a);
   }
   tip(post, 'Left leg of the U frame', `50 × 50 × 3 316 SHS just clear of the white wall step, its outside face flush with the weatherboard over the opening (14 mm in front of the corner), welded to the top beam. Slab anchors at the bottom; nothing fixed into the shared wall. M6 rivnuts down the outside face for the side frame.${cfg.shutter.uFinish === 'black' ? ' Powder-coated black.' : ''}`);
@@ -7407,7 +7411,7 @@ function updateShutterReadout() {
       h('ul', { class: 'spec' },
         h('li', {}, h('b', {}, 'Post '), `${j.rhs ? '100 × 50 × 3 mm 316 stainless RHS (100 across the opening)' : '75 × 75 × 3 mm 316 stainless SHS (square tube)'}, ${Math.round((j.y1 - j.y0) * 1000)} mm long (base plate to ${L.mount === 'portal' ? 'header' : 'ceiling'}), welded to the base plate, capped at the top`),
         h('li', {}, h('b', {}, 'Pass-throughs '), `3 × 38.1 mm 316 tube welded through at ${Math.round(PASS_PITCH * 1000)} mm centres, ${[0, 1, 2].map((i) => Math.round((j.pt - L.floorS + i * PASS_PITCH) * 1000)).join(' / ')} mm above the slab, ${Math.round((L.W - j.xc) * 1000)} mm off the brick${j.rhs ? ` (clear of the 30 mm frame overlap). Each tube ${Math.round((0.025 + (j.z1 - j.z0) + j.outLen) * 1000)} mm flange face to flange face: 25 mm proud inside, ${Math.round((j.z1 - j.z0) * 1000)} through the post, ${Math.round(j.outLen * 1000)} proud outside so the clamps sit clear in front of the ${Math.round(L.frameD * 1000)} mm deep side frame` : ''}, 1.5" tri-clamp ferrule each end`),
-        h('li', {}, h('b', {}, 'Base plate '), j.rhs ? '8 mm 316, 100 × 110 mm, a tab on the inside only (the frame stands outside): 2 × M10 316 anchors into the slab, seal under it' : '8 mm 316, 105 × 195 mm, with a tab inside and outside the shutter line: 4 × M10 316 anchors into the slab, seal under it'),
+        h('li', {}, h('b', {}, 'Base plates '), j.rhs ? `8 mm 316 under each leg, with a 60 mm tab on the inside only (the frame stands outside). Right: 100 × 110 mm. Left: runs from the weatherboard to the leg's far side (${Math.round((L.postL.x1 - 0.002) * 1000)} mm), filling the corner behind the white wall step. 2 × M10 316 anchors each, all four on one line 34 mm in from the legs' inside faces; seal under them` : '8 mm 316, 105 × 195 mm, with a tab inside and outside the shutter line: 4 × M10 316 anchors into the slab, seal under it'),
         L.uBeam ? h('li', {}, h('b', {}, 'Frame '), `Inverted U, ${Math.round((L.uBeam.x1 - L.uBeam.x0) * 1000)} mm wide: this leg ${Math.round((L.uBeam.y1 - j.yb) * 1000)} mm floor to top of the U, the 50 × 50 × 3 SHS left leg ${Math.round((L.uBeam.y1 - L.postL.yb) * 1000)} mm (the slab is higher on that side), and a 50 × 25 × 3 RHS top beam butting up under the weatherboard edge, all 316, welded. Three 45 × 150 × 3 mm tabs welded on the beam's inside top edge at ${(cfg.nook.joists || []).join(' / ')} mm from the brick, S-bent to rise 22 mm over the first 65 mm, then flat; 2 × 14g × 100 316 screws each, in a line along the joist, 40 mm apart. ${cfg.shutter.uFinish === 'black' ? 'Powder-coated black after welding, with the ferrules, their bores and the tube stubs masked so they stay bare.' : 'Bare 316.'}`) : null,
         L.uBeam ? null : j.brick ? h('li', {}, h('b', {}, 'Brick cleats '), '2 × 60 mm 316 angle cleats welded to the inside face, about 900 mm up and 450 mm below the ceiling, each with 2 × M8 316 masonry anchors 70 mm into the brick') : L.mount === 'portal' ? null : h('li', {}, h('b', {}, 'Top '), 'One 60 mm cleat on the inside face, 2 × 14g 316 screws up into the ceiling framing'),
         h('li', {}, h('b', {}, 'Against the brick '), j.brick ? 'Only the two cleats; an EPDM strip on the post closes the gap' : 'Nothing drilled into it: an EPDM strip on the post closes the gap'),

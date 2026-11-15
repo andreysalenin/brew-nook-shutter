@@ -327,9 +327,9 @@ function makeFabPdf(jsPDF, D) {
   sheet(2);
   // ----- DETAIL A: right leg, outside face, bottom 300 (1:2.5) -----
   {
-    const s = 0.4, A = view(52, 128, s);
+    const s = 1 / 3, A = view(52, 128, s);
     const X = (x) => A.X(x); // local: 0 = opening-side edge of the right leg, 100 = brick face
-    const hTop = 250;
+    const hTop = Math.max(250, Math.ceil((D.pass.ys[2] + 50) / 50) * 50);
     pen(THICK); fill(black ? [86, 86, 90] : [225, 226, 228]);
     doc.rect(X(0), A.Y(hTop), RL.w * s, (hTop - pt) * s, 'S');
     doc.rect(X(0), A.Y(pt), RL.w * s, pt * s, 'S');
@@ -356,17 +356,18 @@ function makeFabPdf(jsPDF, D) {
     dimH(X(0), X(D.pass.overlap), A.Y(hTop) - 6, A.Y(hTop), A.Y(hTop), f1(D.pass.overlap), { size: 6.5 });
     dimH(X(0), X(RL.w), A.Y(hTop) - 12, A.Y(hTop), A.Y(hTop), f1(RL.w), { size: 6.5 });
     let xl = X(RL.w) + 8;
-    for (const y of D.pass.ys) { dimV(A.Y(0), A.Y(y), xl, X(RL.w), cx + 2, f1(y), { size: 6.5 }); xl += 7; }
+    for (const y of D.pass.ys) { dimV(A.Y(pt), A.Y(y), xl, X(RL.w), cx + 2, f1(y - pt), { size: 6.5 }); xl += 7; }
+    txt('CENTRES FROM THE TOP OF THE BASE PLATE', X(RL.w) + 8, A.Y(pt) + 4.5, { size: 5.2, color: CL });
     dimV(A.Y(D.pass.ys[0]), A.Y(D.pass.ys[1]), cx - 14, null, null, f1(D.pass.ys[1] - D.pass.ys[0]), { size: 6.5 });
     leader(cx - (D.pass.hole / 2) * s * 0.7, A.Y(D.pass.ys[2]) - (D.pass.hole / 2) * s * 0.7, X(0) - 8, A.Y(D.pass.ys[2]) - 22, [`3 × Ø${f1(D.pass.hole)} THRU BOTH WALLS`, 'for the Ø38.1 tubes'], { size: 6, bold: true });
     if (black) leader(cx - (D.pass.ring / 2) * s * 0.7, A.Y(D.pass.ys[1]) - (D.pass.ring / 2) * s * 0.7, X(0) - 8, A.Y(D.pass.ys[1]) - 10, [`Ø${D.pass.ring} BARE RING`, 'BOTH FACES,', 'MASK BEFORE', 'COATING'], { size: 6, bold: true, c: BLUE, tc: BLUE });
     pen(MED, CL); ln(X(-30), A.Y(0), X(RL.w + 30), A.Y(0)); txt('SLAB', X(-30), A.Y(0) + 3, { size: 5.5, color: CL });
     txt('BRICK SIDE', X(RL.w) - 1, A.Y(hTop) + 4, { size: 5.5, color: CL, align: 'right' });
-    viewTitle(X(50) + 6, 146, 'DETAIL A: RIGHT LEG, OUTSIDE FACE', '1 : 2.5', 'viewed from outside');
+    viewTitle(X(50) + 6, 146, 'DETAIL A: RIGHT LEG, OUTSIDE FACE', '1 : 3', 'viewed from outside');
   }
   // ----- SECTION B-B through the pass-throughs (1:2.5) -----
   {
-    const s = 0.4, B = view(214, 128, s);
+    const s = 1 / 3, B = view(214, 128, s);
     const ZX = (zin) => B.X(-zin); // inward from the outside face to the left
     const y2 = D.pass.ys[2] + 40;
     // RHS walls (cut, hatched)
@@ -399,7 +400,7 @@ function makeFabPdf(jsPDF, D) {
     dimH(ZX(50 + D.pass.inside), ZX(50), yd, B.Y(yt + rf), B.Y(y2), f1(D.pass.inside), { size: 6.5 });
     dimH(ZX(50), ZX(0), yd, B.Y(y2), B.Y(y2), '50', { size: 6.5 });
     dimH(ZX(0), ZX(-D.pass.outside), yd, B.Y(y2), B.Y(yt + rf), f1(D.pass.outside), { size: 6.5 });
-    dimH(ZX(50 + D.pass.inside), ZX(-D.pass.outside), yd - 7, yd, yd, `${f1(D.pass.total)} FLANGE FACE TO FLANGE FACE`, { size: 6.5, bold: true });
+    dimH(ZX(50 + D.pass.inside), ZX(-D.pass.outside), yd - 7, yd, yd, `${f1(D.pass.total)} FLANGE TO FLANGE`, { size: 6.5, bold: true });
     // tube length between ferrules
     const yb = D.pass.ys[0];
     const ym1 = (D.pass.ys[0] + D.pass.ys[1]) / 2, ym2 = (D.pass.ys[1] + D.pass.ys[2]) / 2;
@@ -422,7 +423,7 @@ function makeFabPdf(jsPDF, D) {
     weldSymbol(ZX(1.5), B.Y(D.pass.ys[1] - D.pass.od / 2), ZX(1.5) + 26, B.Y(D.pass.ys[0]) + 22, '2', true, { note: 'WELD 2 (AFTER COAT)', c: BLUE, bold: true });
     txt('NOOK', ZX(95), B.Y(y2) + 4, { size: 6, color: CL, align: 'center' });
     txt('OUTSIDE', ZX(-58), B.Y(y2) + 4, { size: 6, color: CL, align: 'center' });
-    viewTitle(ZX(30), 146, 'SECTION B–B: PASS-THROUGHS', '1 : 2.5', 'through the tube centreline');
+    viewTitle(ZX(30), 146, 'SECTION B–B: PASS-THROUGHS', '1 : 3', 'through the tube centreline');
   }
   // ----- DETAIL C: base plates (plan, 1:2.5) -----
   {
@@ -609,8 +610,12 @@ function makeFabPdf(jsPDF, D) {
       txt('OPENING SIDE', V0.X(xEdge) + (g.edgeSide === 'left' ? 2 : -2), V0.Y(g.h * 0.55), { size: 5.5, color: ACC, angle: 90, align: 'center' });
     }
     txt('SCALE 1 : 12.5', 122, 280 - 3.5, { size: 6.5, align: 'center', color: CL });
-    txt(`RIVNUT HEIGHTS FROM THE SLAB AT EACH LEG: ${D.rivnuts.R.ys.length} PER LEG, ~${f1(D.rivnuts.pitch)} PITCH, 100 OFF THE SLAB AND 100 BELOW THE HEADBOX (CEILING LINE)`, 122, 18, { size: 6.5, bold: true, align: 'center', maxWidth: 210 });
-    txt('shaded strip = 30 side-frame overlap; rivnuts on its centreline', 122, 25.5, { size: 6, align: 'center', color: ACC });
+    if (D.rivnuts.fromTop) {
+      const chain = (leg, ys) => `${f0(ys[0])} + ${ys.length - 1} × ${f0(D.rivnuts.pitch)} + ${f0(D.rivnuts.fromTop)} = ${f0(leg.height)}`;
+      txt(`LEG 2: ${chain(RL, D.rivnuts.R.ys)}      LEG 1: ${chain(LL, D.rivnuts.L.ys)}   (set out down from the level top of the U)`, 122, 18.5, { size: 6.5, bold: true, align: 'center', color: BLUE });
+    }
+    txt(D.rivnuts.fromTop ? `RIVNUT HEIGHTS FROM THE SLAB: ${D.rivnuts.R.ys.length} PER LEG AT ${f0(D.rivnuts.pitch)} CENTRES, FIRST ${f0(D.rivnuts.fromTop)} BELOW THE TOP OF THE U` : `RIVNUT HEIGHTS FROM THE SLAB AT EACH LEG: ${D.rivnuts.R.ys.length} PER LEG, ~${f1(D.rivnuts.pitch)} PITCH, 100 OFF THE SLAB AND 100 BELOW THE HEADBOX (CEILING LINE)`, 122, 14, { size: 6.5, bold: true, align: 'center', maxWidth: 210 });
+    txt('shaded strip = 30 side-frame overlap; rivnuts on its centreline', 122, 280, { size: 6, align: 'center', color: ACC });
   }
   // hole schedule
   {

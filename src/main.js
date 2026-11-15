@@ -753,6 +753,7 @@ function makeMaterials() {
   MAT.hlStruct = S({ color: 0xff6a13, emissive: 0xff6a13, emissiveIntensity: 0.3, roughness: 0.5, metalness: 0.15 });
   MAT.hlFix = S({ color: 0x00a8f0, emissive: 0x00a8f0, emissiveIntensity: 0.45, roughness: 0.4, metalness: 0.15 });
   MAT.hlShutter = S({ color: 0x8a96a3, roughness: 0.6, metalness: 0, transparent: true, opacity: 0.22, depthWrite: false });
+  MAT.hlJoist = S({ color: 0xc8a06a, roughness: 0.8, metalness: 0, transparent: true, opacity: 0.5, depthWrite: false });
   MAT.screenBlue = new THREE.MeshBasicMaterial({ map: TEX.ftss });
   MAT.screenRed = new THREE.MeshBasicMaterial({ map: TEX.glyDisp });
   MAT.dialFace = new THREE.MeshBasicMaterial({ map: TEX.dial });
@@ -849,6 +850,7 @@ function applyHighlight() {
     if (r === 'struct') { o.material = MAT.hlStruct; o.castShadow = true; }
     else if (r === 'fix') { o.material = MAT.hlFix; o.castShadow = true; }
     else if (r === 'shutter') { o.material = MAT.hlShutter; o.castShadow = false; }
+    else if (r === 'joist') { o.material = MAT.hlJoist; o.castShadow = false; }
     else { o.material = dimmed(o.userData.origMat); o.castShadow = false; }
   });
   G.dims.visible = !on;
@@ -1146,15 +1148,19 @@ function buildRoom() {
       }
     }
     if (!v.hideCeiling) {
-      const hb = boxAt(-0.10, H + 0.013, D - 0.2, W + 0.05, H + 0.31, D - 0.02, MAT.stud);
-      tip(hb, 'Head beam / trimmer over the opening (assumed)', 'The wall above the opening must bear on something here. Best fixing point for the headbox.');
-      G.xray.add(hb);
-      for (const jm of cfg.nook.joists || []) {
-        const x = W - jm / 1000;
-        const j = boxAt(x - 0.0225, H + 0.013, 0.02, x + 0.0225, H + 0.203, D - 0.2, MAT.stud);
-        tip(j, 'Ceiling joist', `Runs front to back, ${jm} mm from the brick (measured); the U frame's tabs screw into it`);
-        G.xray.add(j);
-      }
+      // nothing assumed here: just the three joists, front to back, running out to the weatherboard
+    }
+  }
+
+  // Ceiling joists (measured positions), front to back up to the back of the weatherboard. They sit above the
+  // plasterboard, so they show with the ceiling see-through (x-ray) or in the mounting view.
+  if (!v.hideCeiling) {
+    for (const jm of cfg.nook.joists || []) {
+      const x = W - jm / 1000;
+      const j = boxAt(x - 0.0225, H + 0.013, 0.02, x + 0.0225, H + 0.203, D + CEIL.face - CEIL.wb, MAT.stud);
+      j.userData.role = 'joist';
+      tip(j, 'Ceiling joist', `45 mm joist, front to back, ${jm} mm from the brick (measured), running out to the weatherboard. The U frame's tab screws go into it.`);
+      (xray ? G.xray : G.room).add(j);
     }
   }
 
@@ -3510,8 +3516,47 @@ function resize() {
 }
 new ResizeObserver(resize).observe(stage);
 
+// WASD to walk, Q/E down/up, Shift to go faster. Moves the camera and its target together.
+const keysDown = new Set();
+let lastLoop = 0;
+const typing = (e) => { const t = e.target; return t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)); };
+addEventListener('keydown', (e) => {
+  if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if ('wasdqe'.includes(k) && k.length === 1) { keysDown.add(k); e.preventDefault(); }
+  if (k === 'shift') keysDown.add('shift');
+});
+addEventListener('keyup', (e) => { keysDown.delete(e.key.toLowerCase()); if (e.key === 'Shift') keysDown.delete('shift'); });
+addEventListener('blur', () => keysDown.clear());
+const _fw = new THREE.Vector3(), _rt = new THREE.Vector3(), _mv = new THREE.Vector3();
+function stepWalk(dt) {
+  if (!keysDown.size || (keysDown.size === 1 && keysDown.has('shift'))) return;
+  const sp = (keysDown.has('shift') ? 3 : 1.1) * Math.min(dt, 0.1);
+  camera.getWorldDirection(_fw);
+  _fw.y = 0;
+  if (_fw.lengthSq() < 1e-6) _fw.set(0, 0, -1);
+  _fw.normalize();
+  _rt.crossVectors(_fw, camera.up).normalize();
+  _mv.set(0, 0, 0);
+  if (keysDown.has('w')) _mv.add(_fw);
+  if (keysDown.has('s')) _mv.sub(_fw);
+  if (keysDown.has('d')) _mv.add(_rt);
+  if (keysDown.has('a')) _mv.sub(_rt);
+  if (keysDown.has('e')) _mv.y += 1;
+  if (keysDown.has('q')) _mv.y -= 1;
+  if (_mv.lengthSq() === 0) return;
+  _mv.normalize().multiplyScalar(sp);
+  tween = null;
+  camera.position.add(_mv);
+  controls.target.add(_mv);
+  needsRender = true;
+}
+
 function loop(now) {
   requestAnimationFrame(loop);
+  const dt = lastLoop ? (now - lastLoop) / 1000 : 0;
+  lastLoop = now;
+  stepWalk(dt);
   if (tween) stepTween(now);
   if (anim) stepAnim(now);
   const moved = controls.update();

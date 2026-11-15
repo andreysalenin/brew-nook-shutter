@@ -356,8 +356,8 @@ function makeFabPdf(jsPDF, D) {
     dimH(X(0), X(D.pass.overlap), A.Y(hTop) - 6, A.Y(hTop), A.Y(hTop), f1(D.pass.overlap), { size: 6.5 });
     dimH(X(0), X(RL.w), A.Y(hTop) - 12, A.Y(hTop), A.Y(hTop), f1(RL.w), { size: 6.5 });
     let xl = X(RL.w) + 8;
-    for (const y of D.pass.ys) { dimV(A.Y(pt), A.Y(y), xl, X(RL.w), cx + 2, f1(y - pt), { size: 6.5 }); xl += 7; }
-    txt('CENTRES FROM THE TOP OF THE BASE PLATE', X(RL.w) + 8, A.Y(pt) + 4.5, { size: 5.2, color: CL });
+    for (const y of D.pass.ys) { dimV(A.Y(0), A.Y(y), xl, X(RL.w), cx + 2, f1(y), { size: 6.5 }); xl += 7; }
+    txt('CENTRES FROM THE SLAB, 80 APART; RIVNUT AT 120 SITS MIDWAY', X(RL.w) + 8, A.Y(0) + 4.5, { size: 5.2, color: CL });
     dimV(A.Y(D.pass.ys[0]), A.Y(D.pass.ys[1]), cx - 14, null, null, f1(D.pass.ys[1] - D.pass.ys[0]), { size: 6.5 });
     leader(cx - (D.pass.hole / 2) * s * 0.7, A.Y(D.pass.ys[2]) - (D.pass.hole / 2) * s * 0.7, X(0) - 8, A.Y(D.pass.ys[2]) - 22, [`3 × Ø${f1(D.pass.hole)} THRU BOTH WALLS`, 'for the Ø38.1 tubes'], { size: 6, bold: true });
     if (black) leader(cx - (D.pass.ring / 2) * s * 0.7, A.Y(D.pass.ys[1]) - (D.pass.ring / 2) * s * 0.7, X(0) - 8, A.Y(D.pass.ys[1]) - 10, [`Ø${D.pass.ring} BARE RING`, 'BOTH FACES,', 'MASK BEFORE', 'COATING'], { size: 6, bold: true, c: BLUE, tc: BLUE });

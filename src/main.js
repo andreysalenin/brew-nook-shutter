@@ -1945,7 +1945,7 @@ function shutterLayout() {
   }
   if (L.dumpJamb) {
     const yb = L.dumpJamb.yb ?? L.floorS;
-    L.dumpJamb = { x0: W - DUMP_JAMB, x1: W, z0: L.zs - DUMP_JAMB / 2, z1: L.zs + DUMP_JAMB / 2, xc: W - DUMP_JAMB / 2, outLen: 0.025, ...L.dumpJamb, yb, y0: yb + 0.008, pt: yb + 0.008 + PASS_LIFT };
+    L.dumpJamb = { x0: W - DUMP_JAMB, x1: W, z0: L.zs - DUMP_JAMB / 2, z1: L.zs + DUMP_JAMB / 2, xc: W - DUMP_JAMB / 2, outLen: 0.025, ...L.dumpJamb, yb, y0: yb + 0.008, pt: yb + PASS_LIFT };
   }
   L.spring = cfg.shutter.drive !== 'motor';
   L.barH = 0.057;
@@ -2554,14 +2554,16 @@ function buildDump() {
     const cap = new THREE.Group();
     cap.add(TC.aim(TC.joint('1.5', { cap: true, lenA: 0.001 }), V(xc, y, b.z0 - 0.025 - sz.gap / 2), V(0, 0, -1), LUGS_OUT));
     cap.add(TC.aim(TC.joint('1.5', { cap: true, lenA: 0.001 }), V(xc, y, zOut0 + sz.gap / 2), V(0, 0, 1), LUGS_OUT));
-    tip(cap, 'Spare pass-through', `1.5" TC tube welded through the post, ${Math.round((y - b.y0) * 1000)} mm above the base plate, capped inside and out`);
+    tip(cap, 'Spare pass-through', `1.5" TC tube welded through the post, ${Math.round((y - b.yb) * 1000)} mm above the slab, capped inside and out`);
     out.add(cap);
   }
   grp.add(out);
   G.dump.add(grp);
 }
 const PASS_PITCH = 0.08, PASS_SPARE = 2;       // spare pass-throughs above the dump line, 80 mm centres
-const PASS_LIFT = 0.08;                        // lowest pass-through centre 80 mm above the base plate
+const PASS_LIFT = 0.08;                        // lowest pass-through centre 80 mm off the slab, so with 80 mm centres the
+                                               // 120 mm rivnut sits midway between the first two
+const ANCHOR_EDGE = 0.015;                     // slab anchor centres 15 mm in from the base plate ends
 const ELBOW_E = 0.057, ELBOW_R = 0.038;        // KegLand 1.5" 90° elbow: centre line to face, bend radius
 const SPOOLS = [0.0508, 0.0762, 0.1016, 0.127, 0.1524, 0.2032, 0.3048]; // stock 1.5" TC spool lengths (2"–12")
 const LUGS_OUT = V(-1, 0, 0);                  // pass-through clamps: lugs toward the opening so stacked clamps clear
@@ -2604,7 +2606,7 @@ function buildLeftPostC(L, grp) {
   post.add(boxAt(p.x0, fb, p.z0, p.x1, fb + 0.008, p.z1, fin));
   post.add(boxAt(cx0, fb, p.z0 - ext, p.x1, fb + 0.008, p.z0, fin));
   post.add(boxAt(cx0, fb, p.z0, p.x0, fb + 0.008, Math.min(p.z1, dimsM().D - 0.001), fin));
-  for (const x of [cx0 + 0.016, p.x1 - 0.014]) {
+  for (const x of [cx0 + ANCHOR_EDGE, p.x1 - ANCHOR_EDGE]) {
     const a = new THREE.Group();
     a.userData.role = 'fix';
     a.add(cyl(0.009, 0.009, 0.008, MAT.ss, x, fb + 0.012, az, 6));
@@ -2675,7 +2677,7 @@ function buildDumpJamb(L, grp) {
   // 8 mm base plate with a tab inside and outside the shutter line, two slab anchors in each
   const tx0 = j.rhs ? j.x0 : j.x1 - 0.105, ext = 0.06;
   post.add(boxAt(tx0, j.yb, j.z0 - ext, j.x1, j.yb + 0.008, j.rhs ? j.z1 : j.z1 + ext, fin));
-  for (const z of j.rhs ? [j.z0 - 0.034] : [j.z0 - 0.034, j.z1 + 0.034]) for (const x of [tx0 + 0.015, j.x1 - 0.014]) {
+  for (const z of j.rhs ? [j.z0 - 0.034] : [j.z0 - 0.034, j.z1 + 0.034]) for (const x of [tx0 + ANCHOR_EDGE, j.x1 - ANCHOR_EDGE]) {
     const a = new THREE.Group();
     a.userData.role = 'fix';
     a.add(cyl(0.009, 0.009, 0.008, MAT.ss, x, j.yb + 0.012, z, 6));
@@ -3091,7 +3093,7 @@ function updateShutterReadout() {
       h('p', { class: 'blurb' }, h('b', {}, 'The one custom part: the dump jamb. '), j.brick ? 'A stainless fabricator makes it and you fit it before the shutter company comes. To them it is just a flat face to screw the right guide to. It stands on the slab and is held to the brick by two cleats.' : 'A stainless fabricator makes it and you fit it before the shutter company comes. To them it is just a steel post to fix the right guide and headbox to. It is fixed the same way as the left post: slab and ceiling only.'),
       h('ul', { class: 'spec' },
         h('li', {}, h('b', {}, 'Post '), `${j.rhs ? '100 × 50 × 3 mm 316 stainless RHS (100 across the opening)' : '75 × 75 × 3 mm 316 stainless SHS (square tube)'}, ${Math.round((j.y1 - j.y0) * 1000)} mm long (base plate to ${L.mount === 'portal' ? 'header' : 'ceiling'}), welded to the base plate, capped at the top`),
-        h('li', {}, h('b', {}, 'Pass-throughs '), `3 × 38.1 mm 316 tube welded through at ${Math.round(PASS_PITCH * 1000)} mm centres, ${[0, 1, 2].map((i) => Math.round((j.pt - j.y0 + i * PASS_PITCH) * 1000)).join(' / ')} mm above the base plate, ${Math.round((L.W - j.xc) * 1000)} mm off the brick${j.rhs ? ` (clear of the 30 mm frame overlap). Each tube ${Math.round((0.025 + (j.z1 - j.z0) + j.outLen) * 1000)} mm flange face to flange face: 25 mm proud inside, ${Math.round((j.z1 - j.z0) * 1000)} through the post, ${Math.round(j.outLen * 1000)} proud outside so the clamps sit clear in front of the ${Math.round(L.frameD * 1000)} mm deep side frame` : ''}, 1.5" tri-clamp ferrule each end`),
+        h('li', {}, h('b', {}, 'Pass-throughs '), `3 × 38.1 mm 316 tube welded through at ${Math.round(PASS_PITCH * 1000)} mm centres, ${[0, 1, 2].map((i) => Math.round((j.pt - j.yb + i * PASS_PITCH) * 1000)).join(' / ')} mm above the slab, ${Math.round((L.W - j.xc) * 1000)} mm off the brick${j.rhs ? ` (clear of the 30 mm frame overlap). Each tube ${Math.round((0.025 + (j.z1 - j.z0) + j.outLen) * 1000)} mm flange face to flange face: 25 mm proud inside, ${Math.round((j.z1 - j.z0) * 1000)} through the post, ${Math.round(j.outLen * 1000)} proud outside so the clamps sit clear in front of the ${Math.round(L.frameD * 1000)} mm deep side frame` : ''}, 1.5" tri-clamp ferrule each end`),
         h('li', {}, h('b', {}, 'Base plates '), j.rhs ? `8 mm 316 under each leg, with a 60 mm tab on the inside only (the frame stands outside). Right: 100 × 110 mm. Left: runs from the weatherboard to the leg's far side (${Math.round((L.postL.x1 - 0.002) * 1000)} mm), filling the corner behind the white wall step. 2 × M10 316 anchors each, all four on one line 34 mm in from the legs' inside faces; seal under them` : '8 mm 316, 105 × 195 mm, with a tab inside and outside the shutter line: 4 × M10 316 anchors into the slab, seal under it'),
         L.uBeam ? h('li', {}, h('b', {}, 'Frame '), `Inverted U, ${Math.round((L.uBeam.x1 - L.uBeam.x0) * 1000)} mm wide: this leg ${Math.round((L.uBeam.y1 - j.yb) * 1000)} mm floor to top of the U, the 50 × 50 × 3 SHS left leg ${Math.round((L.uBeam.y1 - L.postL.yb) * 1000)} mm (the slab is higher on that side), and a 50 × 25 × 3 RHS top beam butting up under the weatherboard edge, all 316, welded. Three 45 × 150 × 3 mm tabs welded on the beam's inside top edge at ${(cfg.nook.joists || []).join(' / ')} mm from the brick, S-bent to rise 22 mm over the first 65 mm, then flat; 2 × 14g × 100 316 screws each, in a line along the joist, 40 mm apart. ${cfg.shutter.uFinish === 'black' ? 'Powder-coated black after welding, with the ferrules, their bores and the tube stubs masked so they stay bare.' : 'Bare 316.'}`) : null,
         L.uBeam ? null : j.brick ? h('li', {}, h('b', {}, 'Brick cleats '), '2 × 60 mm 316 angle cleats welded to the inside face, about 900 mm up and 450 mm below the ceiling, each with 2 × M8 316 masonry anchors 70 mm into the brick') : L.mount === 'portal' ? null : h('li', {}, h('b', {}, 'Top '), 'One 60 mm cleat on the inside face, 2 × 14g 316 screws up into the ceiling framing'),
@@ -3136,8 +3138,8 @@ function fabData() {
   let arc = 0;
   for (let i = 0, n = 2000, pu = 0, pv = 0; i <= n; i++) { const u = (P.tabL * i) / n, v = P.rise * S(u); if (i) arc += Math.hypot(u - pu, v - pv); pu = u; pv = v; }
   const excess = arc - P.tabL;
-  const leftHoles = [mm1(0.002 + 0.016 - x0), mm1(p.x1 - 0.014 - x0)];
-  const rightHoles = [mm1(j.x0 + 0.015 - x0), mm1(j.x1 - 0.014 - x0)];
+  const leftHoles = [mm1(0.002 + ANCHOR_EDGE - x0), mm1(p.x1 - ANCHOR_EDGE - x0)];
+  const rightHoles = [mm1(j.x0 + ANCHOR_EDGE - x0), mm1(j.x1 - ANCHOR_EDGE - x0)];
   const gf = L.guideFix || {};
   const tube = mm1(0.025 + (j.z1 - j.z0) + j.outLen) - 2 * 21.5;
   return {

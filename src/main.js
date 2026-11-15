@@ -111,7 +111,7 @@ const MOUNTS = {
   },
   face: {
     letter: 'C', name: 'Posts, face-fixed frames, headbox outside', short: 'posts + outside box',
-    blurb: 'One inverted-U stainless frame just inside the opening: a 50 × 50 SHS leg on the left, just clear of the white wall step, a 100 × 50 RHS leg against the brick on the right and a 50 × 25 RHS top beam, with three S-bent tabs screwed up into the ceiling joists. The legs are anchored to the slab. The shutter\'s side frames screw onto the posts\' outside faces, overlapping them by 30 mm, and the headbox sits on top of the frames above the opening, in front of the roof line, held only at its flush sides: each end cap is screwed through the side frame into the post, with no clips to the wall. Nothing is fixed into either wall. The right post carries the 1.5" pass-throughs, set off-centre toward the brick so the clamps clear the frame.',
+    blurb: 'One inverted-U stainless frame just inside the opening: a 50 × 50 SHS leg on the left, just clear of the white wall step, a 100 × 50 RHS leg against the brick on the right and a 50 × 25 RHS top beam, with three S-bent tabs screwed up into the ceiling joists. The legs are anchored to the slab. The shutter\'s side frames screw onto the posts\' outside faces, overlapping them by 30 mm, and the headbox sits on top of the frames above the opening, in front of the roof line, held only by its end caps, which fix internally to the side frames: no clips or brackets. Nothing is fixed into either wall. The right post carries the 1.5" pass-throughs, set off-centre toward the brick so the clamps clear the frame.',
     pros: ['Nothing into the shared wall or the brick: posts are slab and ceiling fixed', 'Full clear height: the headbox is outside', 'A standard face-fit shutter: the installer screws the frames onto two flat stainless faces', 'Manual spring drive: nothing electrical in the rain'],
     cons: ['Each post needs two screws up into solid ceiling framing (add blocking if needed)', 'The headbox is out in the rain (fine for a manual shutter)'],
   },
@@ -2038,7 +2038,7 @@ function buildShutter() {
   const bx = L.box;
   const hb = mesh(headboxGeo(L.B, bx.x1 - bx.x0, bx.chamfer), inside ? MAT.headboxGhost : MAT.headbox);
   hb.position.set(bx.x0, bx.y0, bx.z0);
-  tip(hb, `Headbox ${Math.round(L.B * 1000)} mm`, L.spring ? 'Holds the rolled curtain on its spring-balanced axle' : `Holds the rolled curtain and the tubular motor (${cfg.shutter.motor} end)`);
+  tip(hb, `Headbox ${Math.round(L.B * 1000)} mm`, L.mount === 'face' ? `Held only by its end caps, which fix internally to the tops of the side frames; no clips or brackets. ${L.spring ? 'Spring-balanced axle inside.' : 'Tubular motor inside.'}` : L.spring ? 'Holds the rolled curtain on its spring-balanced axle' : `Holds the rolled curtain and the tubular motor (${cfg.shutter.motor} end)`);
   grp.add(hb);
   for (const x of [bx.x0 - 0.002, bx.x1 + 0.002]) {
     const cap = mesh(headboxGeo(L.B + 0.004, 0.004, bx.chamfer), inside ? MAT.headboxGhost : MAT.headbox);
@@ -2163,19 +2163,7 @@ function buildShutter() {
     }
   }
   if (L.mount === 'face') {
-    // the headbox is held only at its flush sides: each end cap's flange drops over the top of the side
-    // frame and is screwed through it into the post. Nothing fixes it to the wall or the beam behind.
-    for (const gd of L.guides) {
-      const g = new THREE.Group();
-      g.add(boxAt(gd.x0, H - 0.07, gd.z1, gd.x1, H, gd.z1 + 0.003, MAT.headbox));
-      for (const y of [H - 0.025, H - 0.052]) {
-        const sc = cylBetween(0.003, V(gd.fixX, y, gd.z1 + 0.004), V(gd.fixX, y, gd.z0 - 0.02), MAT.ss, 8);
-        sc.userData.role = 'fix';
-        g.add(sc);
-      }
-      tip(g, 'Headbox end-cap flange', 'The end cap drops 70 mm over the top of the side frame; two screws through both into the post. This is all that holds the headbox: no clips to the wall.');
-      grp.add(g);
-    }
+    // the headbox's end caps fix to the tops of the side frames internally: nothing shows outside
   } else if (L.dumpJamb) {
     const bx2 = L.box;
     for (const fy of [0.3, 0.7]) {
@@ -2354,17 +2342,8 @@ function buildMountHardware(L, grp) {
       tip(hb, 'Headbox hanger', 'Stainless bracket and M8 bolt into the header');
       grp.add(hb);
     }
-  } else {
-    // face fixed: brackets onto the bulkhead face
-    const b = L.box;
-    for (const x of [0.15, W / 2, W - 0.15]) {
-      const br = new THREE.Group();
-      br.add(boxAt(x - 0.025, b.y1, b.z0 - 0.002, x + 0.025, b.y1 + 0.004, b.z0 + 0.09, MAT.ss));
-      br.add(boxAt(x - 0.025, b.y1 - 0.02, b.z0 - 0.004, x + 0.025, b.y1 + 0.07, b.z0, MAT.ss));
-      tip(br, 'Headbox bracket', 'Screwed through the bulkhead cladding into the framing behind it');
-      grp.add(br);
-    }
   }
+  // option C: no brackets at all. The headbox's end caps fix to the side frames internally.
 }
 
 function updateCurtain() {
@@ -2421,7 +2400,7 @@ function dumpCentre(W) { return layout?.dumpJamb?.xc ?? W - DUMP_JAMB / 2; }
 // option C posts: 50 × 50 × 3 SHS left, 100 × 50 × 3 RHS right (100 across the opening); side frames overlap them 30 mm
 const CEIL = { trim: 0.018, wb: 0.009, wbDrop: 0.007, face: 0.014 }; // weatherboard face is 14 mm in front of the white wall corner // ceiling edge at the opening: trim, then weatherboard 7 mm lower
 const POST_C = { left: 0.05, right: 0.1, d: 0.05, overlap: 0.03, frameW: 0.06, frameD: 0.055,
-  beamH: 0.025, tabW: 0.045, tabL: 0.09, tabT: 0.003, rise: 0.022 }; // tab: 3 + 22 = 7 + 18 (weatherboard lip + trim) // top beam 50 × 25 RHS; S-bent ceiling tabs
+  beamH: 0.025, tabW: 0.045, tabL: 0.15, tabS: 0.065, tabT: 0.003, rise: 0.022, screws: [0.095, 0.135] }; // S over the first 65 mm, then flat // tab: 3 + 22 = 7 + 18 (weatherboard lip + trim) // top beam 50 × 25 RHS; S-bent ceiling tabs
 function erf(x) { // Abramowitz & Stegun 7.1.26
   const s = Math.sign(x), a = Math.abs(x), t = 1 / (1 + 0.3275911 * a);
   return s * (1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-a * a));
@@ -2604,8 +2583,9 @@ function buildUBeam(L, grp) {
   g.add(boxAt(b.x0, b.y0, b.z0, b.x1, b.y1, b.z1, fin));
   tip(g, 'Top beam of the U frame', `50 × 25 × 3 316 RHS, ${Math.round((b.x1 - b.x0) * 1000)} mm, welded across the tops of both legs, ${Math.round((H - b.y0) * 1000)} mm below the ceiling at its underside`);
   // tab profile: flat on the beam's inside top edge, then an erf-shaped S that rises onto the ceiling
-  const sig = 0.016, L0 = 0.012, n = 24;
-  const S = (u) => { const a = erf((-P.tabL / 2) / sig), z = erf((P.tabL / 2) / sig); return (erf((u - P.tabL / 2) / sig) - a) / (z - a); };
+  const sig = 0.012, L0 = 0.012, n = 32;
+  // erf S over the first tabS, then flat along the plasterboard for the two screws
+  const S = (u) => { const c = P.tabS / 2, a = erf(-c / sig), z = erf(c / sig); return u >= P.tabS ? 1 : (erf((u - c) / sig) - a) / (z - a); };
   const top = [], bot = [];
   for (let i = 0; i <= n; i++) {
     const u = (P.tabL * i) / n, v = P.rise * S(u);
@@ -2624,15 +2604,15 @@ function buildUBeam(L, grp) {
     tg.translate(xj - P.tabW / 2, b.y1, b.z0 + L0);
     const tab = mesh(tg, fin);
     tab.userData.role = 'struct';
-    tip(tab, 'Ceiling tab', `45 × 90 × 3 mm 316 tab welded on the beam's inside top edge, S-bent to rise ${Math.round(P.rise * 1000)} mm onto the ceiling under the joist ${jm} mm from the brick`);
+    tip(tab, 'Ceiling tab', `45 × ${Math.round(P.tabL * 1000)} × 3 mm 316 tab welded on the beam's inside top edge, S-bent to rise ${Math.round(P.rise * 1000)} mm over the first ${Math.round(P.tabS * 1000)} mm, then flat on the plasterboard under the joist ${jm} mm from the brick`);
     g.add(tab);
-    for (const dx of [-0.012, 0.012]) {
-      const z = b.z0 + L0 - P.tabL + 0.018;
+    for (const u of P.screws) {
+      const dx = 0, z = b.z0 + L0 - u;
       const sc = new THREE.Group();
       sc.userData.role = 'fix';
       sc.add(cylBetween(0.0045, V(xj + dx, H - P.tabT - 0.003, z), V(xj + dx, H - P.tabT, z), MAT.ss, 12));
       sc.add(cylBetween(0.0028, V(xj + dx, H - P.tabT, z), V(xj + dx, H + 0.09, z), MAT.ss, 8));
-      tip(sc, 'Joist screw', `14g × 100 316 batten screw through the tab and plasterboard into the joist ${jm} mm from the brick`);
+      tip(sc, 'Joist screw', `14g × 100 316 batten screw through the tab and plasterboard into the joist ${jm} mm from the brick; the two screws sit in a line along the joist, 40 mm apart, so the tab only has to land somewhere on its 45 mm width`);
       g.add(sc);
     }
   }
@@ -2908,7 +2888,7 @@ function runChecks() {
   if (L.mount === 'face') {
     const j = L.dumpJamb, gR = L.guides[1];
     const clampGap = Math.round(((j.xc - 0.03) - gR.x1) * 1000);
-    add('ok', `Nothing is fixed into either wall: the U frame is anchored to the slab and screwed into the three ceiling joists (${(cfg.nook.joists || []).join(', ')} mm from the brick); the headbox is held only at its flush sides, by its end caps screwed through the side frames into the posts.`);
+    add('ok', `Nothing is fixed into either wall: the U frame is anchored to the slab and screwed into the three ceiling joists (${(cfg.nook.joists || []).join(', ')} mm from the brick); the headbox is held only by its end caps, fixed internally to the side frames.`);
     add(clampGap >= 3 ? 'ok' : 'bad', `Side frames overlap the posts' outside faces by ${Math.round(POST_C.overlap * 1000)} mm (30 mm needed). The tri-clamp pass-throughs sit ${Math.round((L.W - j.xc) * 1000)} mm off the brick, ${clampGap} mm clear of the right frame, with their clamps out in front of it. Frame fixings ${L.guideFix ? L.guideFix.n + ' a side, ' + Math.round(L.guideFix.pitch * 1000) + ' mm apart' : ''}, 100 mm off the floor and the headbox.`);
   } else if (cfg.shutter.partyFix === false) add('ok', L.leftPost ? 'Nothing is fixed into the shared wall: the left post sits in the corner, anchored to the slab and cleated into the ceiling framing.' : 'Nothing is fixed into the shared wall: the left side stands on the slab and is held at the top by the ceiling framing.');
   else add('info', 'The left side is anchored into the wall shared with the other unit. In the ACT that needs the owners corporation’s permission, as does the shutter itself under the default rules.');
@@ -3056,7 +3036,7 @@ function updateShutterReadout() {
         h('li', {}, h('b', {}, 'Post '), `${j.rhs ? '100 × 50 × 3 mm 316 stainless RHS (100 across the opening)' : '75 × 75 × 3 mm 316 stainless SHS (square tube)'}, ${Math.round((j.y1 - j.y0) * 1000)} mm long (base plate to ${L.mount === 'portal' ? 'header' : 'ceiling'}), welded to the base plate, capped at the top`),
         h('li', {}, h('b', {}, 'Pass-throughs '), `3 × 38.1 mm 316 tube welded through at ${Math.round(PASS_PITCH * 1000)} mm centres, ${[0, 1, 2].map((i) => Math.round((j.pt - L.floorS + i * PASS_PITCH) * 1000)).join(' / ')} mm above the slab, ${Math.round((L.W - j.xc) * 1000)} mm off the brick${j.rhs ? ` (clear of the 30 mm frame overlap). Each tube ${Math.round((0.025 + (j.z1 - j.z0) + j.outLen) * 1000)} mm flange face to flange face: 25 mm proud inside, ${Math.round((j.z1 - j.z0) * 1000)} through the post, ${Math.round(j.outLen * 1000)} proud outside so the clamps sit clear in front of the ${Math.round(L.frameD * 1000)} mm deep side frame` : ''}, 1.5" tri-clamp ferrule each end`),
         h('li', {}, h('b', {}, 'Base plate '), j.rhs ? '8 mm 316, 100 × 110 mm, a tab on the inside only (the frame stands outside): 2 × M10 316 anchors into the slab, seal under it' : '8 mm 316, 105 × 195 mm, with a tab inside and outside the shutter line: 4 × M10 316 anchors into the slab, seal under it'),
-        L.uBeam ? h('li', {}, h('b', {}, 'Frame '), `Inverted U, ${Math.round((L.uBeam.x1 - L.uBeam.x0) * 1000)} mm wide: this leg ${Math.round((L.uBeam.y1 - j.yb) * 1000)} mm floor to top of the U, the 50 × 50 × 3 SHS left leg ${Math.round((L.uBeam.y1 - L.postL.yb) * 1000)} mm (the slab is higher on that side), and a 50 × 25 × 3 RHS top beam butting up under the weatherboard edge, all 316, welded. Three 45 × 90 × 3 mm tabs welded on the beam's inside top edge at ${(cfg.nook.joists || []).join(' / ')} mm from the brick, S-bent to rise 20 mm onto the ceiling, 2 × 14g × 100 316 screws each into the joists. ${cfg.shutter.uFinish === 'black' ? 'Powder-coated black after welding, with the ferrules, their bores and the tube stubs masked so they stay bare.' : 'Bare 316.'}`) : null,
+        L.uBeam ? h('li', {}, h('b', {}, 'Frame '), `Inverted U, ${Math.round((L.uBeam.x1 - L.uBeam.x0) * 1000)} mm wide: this leg ${Math.round((L.uBeam.y1 - j.yb) * 1000)} mm floor to top of the U, the 50 × 50 × 3 SHS left leg ${Math.round((L.uBeam.y1 - L.postL.yb) * 1000)} mm (the slab is higher on that side), and a 50 × 25 × 3 RHS top beam butting up under the weatherboard edge, all 316, welded. Three 45 × 150 × 3 mm tabs welded on the beam's inside top edge at ${(cfg.nook.joists || []).join(' / ')} mm from the brick, S-bent to rise 22 mm over the first 65 mm, then flat; 2 × 14g × 100 316 screws each, in a line along the joist, 40 mm apart. ${cfg.shutter.uFinish === 'black' ? 'Powder-coated black after welding, with the ferrules, their bores and the tube stubs masked so they stay bare.' : 'Bare 316.'}`) : null,
         L.uBeam ? null : j.brick ? h('li', {}, h('b', {}, 'Brick cleats '), '2 × 60 mm 316 angle cleats welded to the inside face, about 900 mm up and 450 mm below the ceiling, each with 2 × M8 316 masonry anchors 70 mm into the brick') : L.mount === 'portal' ? null : h('li', {}, h('b', {}, 'Top '), 'One 60 mm cleat on the inside face, 2 × 14g 316 screws up into the ceiling framing'),
         h('li', {}, h('b', {}, 'Against the brick '), j.brick ? 'Only the two cleats; an EPDM strip on the post closes the gap' : 'Nothing drilled into it: an EPDM strip on the post closes the gap'),
         h('li', {}, h('b', {}, j.rhs ? 'Frame face ' : 'Guide face '), `M6 316 rivnuts down the ${j.rhs ? 'outside face, 15 mm from the opening-side edge,' : 'opening-side face'} to suit the guide fixings: 100 mm off the floor and the headbox, ${L.guideFix ? Math.round(L.guideFix.pitch * 1000) : 450} mm apart`),

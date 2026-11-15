@@ -7159,7 +7159,7 @@ function dumpCentre(W) { return layout?.dumpJamb?.xc ?? W - DUMP_JAMB / 2; }
 // option C posts: 50 × 50 × 3 SHS left, 100 × 50 × 3 RHS right (100 across the opening); side frames overlap them 30 mm
 const CEIL = { trim: 0.018, wb: 0.009, wbDrop: 0.007, face: 0.014 }; // weatherboard face is 14 mm in front of the white wall corner // ceiling edge at the opening: trim, then weatherboard 7 mm lower
 const POST_C = { left: 0.05, right: 0.1, d: 0.05, overlap: 0.03, frameW: 0.06, frameD: 0.055,
-  beamH: 0.025, tabW: 0.045, tabL: 0.15, tabS: 0.065, tabT: 0.003, rise: 0.022, screws: [0.095, 0.135] }; // S over the first 65 mm, then flat // tab: 3 + 22 = 7 + 18 (weatherboard lip + trim) // top beam 50 × 25 RHS; S-bent ceiling tabs
+  beamH: 0.025, tabW: 0.045, tabL: 0.174, lap: 0.036, tabS: 0.065, tabT: 0.003, rise: 0.022, screws: [0.119, 0.159] }; // 36 flat on the beam (stops 5 short of the weatherboard lip), S over 65 mm, then flat // tab: 3 + 22 = 7 + 18 (weatherboard lip + trim) // top beam 50 × 25 RHS; S-bent ceiling tabs
 function erf(x) { // Abramowitz & Stegun 7.1.26
   const s = Math.sign(x), a = Math.abs(x), t = 1 / (1 + 0.3275911 * a);
   return s * (1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-a * a));
@@ -7330,6 +7330,7 @@ function buildLeftPostC(L, grp) {
     tip(a, 'Slab anchor', `M10 316 anchor through the inside tab, 80 mm into the slab, in line with the right leg's anchors`);
     post.add(a);
   }
+  post.userData.uframe = true;
   tip(post, 'Left leg of the U frame', `50 × 50 × 3 316 SHS just clear of the white wall step, its outside face flush with the weatherboard over the opening (14 mm in front of the corner), welded to the top beam. Slab anchors at the bottom; nothing fixed into the shared wall. M6 rivnuts down the outside face for the side frame.${cfg.shutter.uFinish === 'black' ? ' Powder-coated black.' : ''}`);
   grp.add(post);
   buildUBeam(L, grp);
@@ -7343,12 +7344,13 @@ function buildUBeam(L, grp) {
   const b = L.uBeam, fin = uFin(), P = POST_C;
   const g = new THREE.Group();
   g.userData.role = 'struct';
+  g.userData.uframe = true;
   g.add(boxAt(b.x0, b.y0, b.z0, b.x1, b.y1, b.z1, fin));
   tip(g, 'Top beam of the U frame', `50 × 25 × 3 316 RHS, ${Math.round((b.x1 - b.x0) * 1000)} mm, welded across the tops of both legs, ${Math.round((H - b.y0) * 1000)} mm below the ceiling at its underside`);
   // tab profile: flat on the beam's inside top edge, then an erf-shaped S that rises onto the ceiling
-  const sig = 0.012, L0 = 0.012, n = 32;
-  // erf S over the first tabS, then flat along the plasterboard for the two screws
-  const S = (u) => { const c = P.tabS / 2, a = erf(-c / sig), z = erf(c / sig); return u >= P.tabS ? 1 : (erf((u - c) / sig) - a) / (z - a); };
+  const sig = 0.012, L0 = P.lap, n = 48;
+  // flat across the beam top for the lap, erf S over tabS from the beam's inside edge, then flat along the plasterboard for the two screws
+  const S = (u) => { u -= P.lap; const c = P.tabS / 2, a = erf(-c / sig), z = erf(c / sig); return u <= 0 ? 0 : u >= P.tabS ? 1 : (erf((u - c) / sig) - a) / (z - a); };
   const top = [], bot = [];
   for (let i = 0; i <= n; i++) {
     const u = (P.tabL * i) / n, v = P.rise * S(u);
@@ -7367,7 +7369,7 @@ function buildUBeam(L, grp) {
     tg.translate(xj - P.tabW / 2, b.y1, b.z0 + L0);
     const tab = mesh(tg, fin);
     tab.userData.role = 'struct';
-    tip(tab, 'Ceiling tab', `45 × ${Math.round(P.tabL * 1000)} × 3 mm 316 tab welded on the beam's inside top edge, S-bent to rise ${Math.round(P.rise * 1000)} mm over the first ${Math.round(P.tabS * 1000)} mm, then flat on the plasterboard under the joist ${jm} mm from the brick`);
+    tip(tab, 'Ceiling tab', `45 × ${Math.round(P.tabL * 1000)} × 3 mm 316 tab, flat across ${Math.round(P.lap * 1000)} mm of the beam top and welded down both sides and across its end, then S-bent to rise ${Math.round(P.rise * 1000)} mm over the first ${Math.round(P.tabS * 1000)} mm, then flat on the plasterboard under the joist ${jm} mm from the brick`);
     g.add(tab);
     for (const u of P.screws) {
       const dx = 0, z = b.z0 + L0 - u;
@@ -7428,8 +7430,18 @@ function buildDumpJamb(L, grp) {
     const p = (z) => pc(z).add(V(0, i * PASS_PITCH, 0));
     ferrule(post, p(j.z0), V(0, 0, -1));
     ferrule(post, p(j.z1), V(0, 0, 1), j.outLen);
+    if (j.rhs && fin === MAT.coatBlack) {
+      // Ø70 bare-stainless rings, masked during powder coating, on both faces around each tube
+      for (const [z, ry] of [[j.z0 - 0.0004, PI], [j.z1 + 0.0004, 0]]) {
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.0196, 0.035, 40), MAT.ssDull);
+        ring.position.copy(p(z)); ring.rotation.y = ry;
+        tip(ring, 'Bare ring', 'Ø70 masked during powder coating: bare 316 where the pipe is welded in after coating');
+        post.add(ring);
+      }
+    }
   }
   tip(post, j.rhs ? 'Right post: 100 × 50 dump post' : 'Dump jamb: the one custom part', j.rhs ? `100 × 50 × 3 316 RHS against the brick, 100 across the opening. Base tab with two slab anchors, a cleat with two screws into the ceiling framing; nothing drilled into the brick. The side frame overlaps the 30 mm of its outside face nearest the opening; the three 1.5" TC pass-throughs sit centred in the other 70 mm, ${Math.round((L.W - j.xc) * 1000)} mm off the brick, with the outside ferrules long enough that the clamps sit in front of the frame.` : (j.brick ? '75 × 75 × 3 316 stainless post against the brick, on a base plate anchored to the slab and held by two cleats anchored into the brick; the right guide screws onto its face.' : '75 × 75 × 3 316 stainless post against the brick, on a base plate anchored to the slab and cleated into the ceiling framing; nothing is drilled into the brick.') + ' Three 1.5" TC pass-throughs at the bottom: the lowest carries the dump hose under the shutter line, the two above are spares, capped.');
+  if (j.rhs && L.uBeam) post.userData.uframe = true;
   grp.add(post);
   const seal = boxAt(j.x1 - 0.0005, j.yb + 0.03, j.z0 + 0.005, j.x1, j.y1 - 0.08, j.z1 - 0.005, MAT.rubber);
   tip(seal, 'EPDM seal strip', 'Stuck to the post, closing the gap against the uneven brick');
@@ -7830,6 +7842,7 @@ function makeFabPdf(jsPDF, D) {
   const PW = 420, PH = 297;
   const INK = [24, 24, 27], CL = [110, 110, 116], ACC = [214, 88, 22], BLUE = [28, 88, 168], COAT = [52, 52, 56], SOFT = [236, 236, 238], BARE = [196, 200, 206];
   const SHEETS = ['GENERAL ARRANGEMENT', 'DETAILS: PASS-THROUGHS, BASE PLATES, CEILING TABS', 'DRILLING, RIVNUTS AND FIXINGS', 'FABRICATION AND FINISH SEQUENCE'];
+  if (D.views && D.views.length) SHEETS.push('3D VIEWS (REFERENCE, NOT TO SCALE)');
   const f1 = (v) => (Math.round(v * 10) / 10).toString();
   const f0 = (v) => Math.round(v).toString();
   const black = D.finish === 'black';
@@ -8053,7 +8066,7 @@ function makeFabPdf(jsPDF, D) {
   sectionMark(E.X(Wd - 50), E.Y(top) - 21, 'A', [1, 0]);
   sectionMark(E.X(Wd - 50), E.Y(-90), 'A', [1, 0]);
   pen(THIN, INK, [4, 1, 1, 1]); ln(E.X(Wd - 50), E.Y(top) - 18, E.X(Wd - 50), E.Y(-90) - 3);
-  viewTitle(E.X(Wd / 2), 272, 'FRONT ELEVATION, FROM INSIDE THE NOOK', '1 : 12.5', 'weatherboard left, brick right');
+  viewTitle(E.X(Wd / 2), 272, 'FRONT ELEVATION, FROM OUTSIDE', '1 : 12.5', 'weatherboard left, brick right; tabs and inside ferrules behind');
 
   // section A-A through the right leg (side view; nook to the left, outside to the right)
   {
@@ -8087,7 +8100,7 @@ function makeFabPdf(jsPDF, D) {
       ['3', 'Top beam, 50 × 25 × 3 RHS', `${f1(Wd)} long`, '1'],
       ['4', 'Base plate L, 8 thk', `${f1(D.plates.left.x1 - D.plates.left.x0)} × 110, notched`, '1'],
       ['5', 'Base plate R, 8 thk', `${f1(RL.w)} × 110`, '1'],
-      ['6', 'Ceiling tab, 3 thk, S-bent', `${D.tabs.w} × ${D.tabs.l}`, String(D.tabs.list.length)],
+      ['6', 'Ceiling tab, 3 thk, S-bent', `${D.tabs.w} × ${f1(D.tabs.dev)} blank`, String(D.tabs.list.length)],
       ['7', 'Pass-through tube Ø38.1 × 1.65', `${f1(D.pass.tube)} long`, '3'],
       ['8', '1.5" TC weld ferrule (21.5 long)', 'standard', '6'],
       ['9', 'M6 rivnut, 316, flanged', 'fit after coating', String(D.rivnuts.L.ys.length + D.rivnuts.R.ys.length)],
@@ -8116,8 +8129,8 @@ function makeFabPdf(jsPDF, D) {
       `2. Heights are measured from the slab at each leg; the slab falls ${f1(yL0)} from left to right.`,
       '   Cut legs to suit: the TOP OF THE U must be level and butt the weatherboard lip.',
       '3. Top beam sits on the legs; seal-weld all round (no open ends).',
-      `4. Ceiling tabs: 3 thk, S-bent ${D.tabs.rise} rise over ${D.tabs.s}, flat ${D.tabs.l - D.tabs.s}. Weld to the`,
-      `   beam's inside top edge (${D.tabs.weld} lap) on the joist centrelines. See sheet 2.`,
+      `4. Ceiling tabs: 3 thk, ${D.tabs.l} long: ${D.tabs.weld} flat on the beam, S-bent ${D.tabs.rise} rise over ${D.tabs.s}, flat ${D.tabs.l - D.tabs.weld - D.tabs.s}. Weld to the`,
+      `   beam top (${D.tabs.weld} lap, both sides + end) on the joist centrelines. See sheet 2.`,
       '5. Pass-throughs (3 off, right leg): see sheet 2 and the sequence on sheet 4.',
       '   Tubes are welded in AFTER powder coating, inside bare masked rings.',
       `6. Finish: ${black ? 'blast, stainless primer, black powder coat. Ferrules, tube stubs' : 'bare 316, pickled and passivated.'}`,
@@ -8297,7 +8310,7 @@ function makeFabPdf(jsPDF, D) {
     const ZX = (zin) => ox - (zin - 50) * s; // NOT USED
     const TX = (u) => ox + u * s; // u: along the tab, from the beam's inside face toward the nook (to the right)
     const TY = (v) => oy - v * s;
-    const py0 = 235;
+    const py0 = 240;
     // beam section (cut), outside face to the left
     pen(THICK); doc.rect(TX(-50), TY(0), 50 * s, bH * s); hatch(TX(-50), TY(0), TX(0), TY(-bH), 0.9);
     pen(THIN); doc.rect(TX(-47), TY(-3), 44 * s, (bH - 6) * s, 'S');
@@ -8311,32 +8324,43 @@ function makeFabPdf(jsPDF, D) {
     // plasterboard + joist (context)
     pen(THIN, CL); doc.rect(TX(-60), TY(D.tabs.rise + D.tabs.t + 13), 220 * s, 13 * s); hatch(TX(-60), TY(D.tabs.rise + D.tabs.t + 13), TX(160), TY(D.tabs.rise + D.tabs.t), 2.4, CL);
     txt('PLASTERBOARD 13 (JOIST ABOVE)', TX(-60), TY(D.tabs.rise + D.tabs.t + 13) - 1.5, { size: 5.5, color: CL });
+    // weatherboard lip (9) and 18 x 18 trim over the beam's outer half: why the lap stops where it does
+    {
+      const lipU0 = -50, lipU1 = -50 + 9, trU1 = lipU1 + 18, trY0 = D.tabs.rise + D.tabs.t - 18;
+      pen(THIN, CL); fill([238, 238, 236]);
+      doc.rect(TX(lipU0), TY(D.tabs.rise + D.tabs.t + 13), 9 * s, (D.tabs.rise + D.tabs.t + 13) * s, 'FD');
+      doc.rect(TX(lipU1), TY(D.tabs.rise + D.tabs.t), 18 * s, 18 * s, 'FD');
+      txt('WB LIP 9', TX(lipU0) - 1, TY(D.tabs.rise * 0.5), { size: 5.2, color: CL, align: 'right' });
+      txt('TRIM 18', TX(lipU1 + 9), TY(trY0) - 1.2, { size: 5.2, color: CL, align: 'center' });
+      const tabEnd = -D.tabs.weld;
+      txt(`lap ends ${f1(tabEnd - lipU1)} short of the WB lip`, TX(-50) - 12, TY(-bH) + 23, { size: 5.6, color: CL });
+    }
     // screws
     for (const u of D.tabs.holes) centreLineV(TX(u - D.tabs.weld), TY(D.tabs.rise + D.tabs.t + 20), TY(D.tabs.rise - 6));
     // dims
-    dimH(TX(prof[0][0]), TX(0), TY(-bH) + 6, TY(0), TY(-bH), f1(D.tabs.weld), { size: 6.5 });
-    dimH(TX(prof[0][0]), TX(le[0]), TY(-bH) + 13, TY(0), TY(le[1]), `${D.tabs.l} TAB LENGTH (FLAT)`, { size: 6.5, bold: true });
+    dimH(TX(prof[0][0]), TX(0), TY(-bH) + 12, TY(0), TY(-bH), `${f1(D.tabs.weld)} LAP`, { size: 6.5 });
+    dimH(TX(prof[0][0]), TX(le[0]), TY(-bH) + 18, TY(0), TY(le[1]), `${D.tabs.l} OVERALL, AS BENT`, { size: 6.5, bold: true });
     dimH(TX(prof[0][0]), TX(prof[0][0] + D.tabs.s), TY(D.tabs.rise + D.tabs.t + 13) - 5, TY(D.tabs.t), TY(D.tabs.rise + D.tabs.t), `${D.tabs.s} S-BEND`, { size: 6.5 });
 
     dimV(TY(0), TY(D.tabs.rise), TX(le[0]) + 6, TX(le[0]), TX(le[0]), `${D.tabs.rise} RISE`, { size: 6.5, bold: true });
     dimV(TY(D.tabs.rise), TY(D.tabs.rise + D.tabs.t), TX(le[0]) + 13, TX(le[0]), TX(le[0]), f1(D.tabs.t), { size: 6.5 });
     dimV(TY(-bH), TY(0), TX(-50) - 5, TX(-50), TX(-50), f1(bH), { size: 6.5 });
     dimH(TX(-50), TX(0), TY(-bH) + 6, TY(-bH), TY(-bH), '50', { size: 6.5 });
-    weldSymbol(TX(prof[0][0] + 1), TY(0), TX(60), TY(-bH) + 21, '3', false, { note: 'WELD 1, BOTH SIDES' });
-    txt('3 + 22 = 7 + 18  (tab + rise = weatherboard lip + trim)', TX(D.tabs.l / 2 - D.tabs.weld), py0 + D.tabs.w * s + 12.5, { size: 6, color: CL, align: 'center' });
+    weldSymbol(TX(prof[0][0] + 1), TY(0), TX(66), TY(-bH) + 25, '3', false, { note: 'WELD 1, BOTH SIDES + END' });
+    txt('3 + 22 = 7 + 18  (tab + rise = WB lip + trim)', TX(-50) - 12, TY(-bH) + 26.5, { size: 5.6, color: CL });
     // tab flat pattern (plan)
     const FX = (u) => TX(-D.tabs.weld + u);
-    pen(THICK); doc.rect(FX(0), py0, D.tabs.l * s, D.tabs.w * s);
-    centreLineH(FX(0) - 3, FX(D.tabs.l) + 3, py0 + (D.tabs.w / 2) * s);
-    for (const u of D.tabs.holes) { pen(THICK); fill([255, 255, 255]); doc.circle(FX(u), py0 + (D.tabs.w / 2) * s, (D.tabs.holeD / 2) * s, 'FD'); crossMark(FX(u), py0 + (D.tabs.w / 2) * s, (D.tabs.holeD / 2) * s); }
-    pen(THIN, INK, [1.2, 0.8]); ln(FX(D.tabs.weld), py0, FX(D.tabs.weld), py0 + D.tabs.w * s); ln(FX(D.tabs.weld + D.tabs.s), py0, FX(D.tabs.weld + D.tabs.s), py0 + D.tabs.w * s);
+    pen(THICK); doc.rect(FX(0), py0, D.tabs.dev * s, D.tabs.w * s);
+    centreLineH(FX(0) - 3, FX(D.tabs.dev) + 3, py0 + (D.tabs.w / 2) * s);
+    for (const u of D.tabs.holesFlat) { pen(THICK); fill([255, 255, 255]); doc.circle(FX(u), py0 + (D.tabs.w / 2) * s, (D.tabs.holeD / 2) * s, 'FD'); crossMark(FX(u), py0 + (D.tabs.w / 2) * s, (D.tabs.holeD / 2) * s); }
+    pen(THIN, INK, [1.2, 0.8]); ln(FX(D.tabs.weld), py0, FX(D.tabs.weld), py0 + D.tabs.w * s); ln(FX(D.tabs.weld + D.tabs.s + D.tabs.excess), py0, FX(D.tabs.weld + D.tabs.s + D.tabs.excess), py0 + D.tabs.w * s);
     dimV(py0, py0 + D.tabs.w * s, FX(0) - 5, FX(0), FX(0), f1(D.tabs.w), { size: 6.5 });
-    dimH(FX(0), FX(D.tabs.holes[0]), py0 - 4, py0, py0 + 4, f1(D.tabs.holes[0]), { size: 6.5 });
-    dimH(FX(D.tabs.holes[0]), FX(D.tabs.holes[1]), py0 - 4, py0 + 4, py0 + 4, f1(D.tabs.holes[1] - D.tabs.holes[0]), { size: 6.5 });
-    leader(FX(D.tabs.holes[0]) - 1.5, py0 + (D.tabs.w / 2) * s + 1.5, FX(0) - 4, py0 + D.tabs.w * s + 3, [`2 × Ø${D.tabs.holeD} ON CL`, 'in line with the joist'], { size: 6 });
-    txt('BEND LINES (dashed)', FX(D.tabs.weld + D.tabs.s / 2), py0 + D.tabs.w * s + 4, { size: 5.5, color: CL, align: 'center' });
-    txt(`ITEM 6: CEILING TAB, 3 THK × ${D.tabs.list.length}`, FX(D.tabs.l / 2), py0 + D.tabs.w * s + 8.5, { size: 7, bold: true, align: 'center' });
-    viewTitle(TX(40), 272, 'DETAIL D: CEILING TAB', '1 : 2.5', 'profile (top) and flat pattern; nook to the right');
+    dimH(FX(0), FX(D.tabs.holesFlat[0]), py0 - 4, py0, py0 + 4, f1(D.tabs.holesFlat[0]), { size: 6.5 });
+    dimH(FX(D.tabs.holesFlat[0]), FX(D.tabs.holesFlat[1]), py0 - 4, py0 + 4, py0 + 4, f1(D.tabs.holesFlat[1] - D.tabs.holesFlat[0]), { size: 6.5 });
+    dimH(FX(0), FX(D.tabs.dev), py0 + D.tabs.w * s + 4, py0 + D.tabs.w * s, py0 + D.tabs.w * s, `${f1(D.tabs.dev)} BLANK`, { size: 6.5, bold: true });
+    leader(FX(D.tabs.holesFlat[0]) - 1.5, py0 + (D.tabs.w / 2) * s + 1.5, FX(0) - 4, py0 + D.tabs.w * s + 3, [`2 × Ø${D.tabs.holeD} ON CL`, 'in line with the joist'], { size: 6 });
+    txt('BEND ZONE (dashed)', FX(D.tabs.weld + (D.tabs.s + D.tabs.excess) / 2), py0 + D.tabs.w * s - 1.5, { size: 5.5, color: CL, align: 'center' });
+    viewTitle(TX(40), 272, 'DETAIL D: CEILING TAB (ITEM 6)', '1 : 2.5', `profile and flat blank, 3 thk × ${D.tabs.list.length}; nook to the right`);
     ZX;
   }
   // ----- right column: weld legend, corner joint -----
@@ -8492,7 +8516,7 @@ function makeFabPdf(jsPDF, D) {
     const steps = black ? [
       ['1', 'CUT & FORM', ['Cut items 1–7 to the parts list.', `Form the 3 ceiling tabs: S-bend ${D.tabs.rise} rise over ${D.tabs.s}, check on a flat.`, 'Deburr all cut ends.'], INK],
       ['2', 'DRILL', ['H1: 6 × Ø39 through both walls of leg 2.', 'H2: Ø9 rivnut holes in both outside faces.', 'H3: Ø12 in base plates.  H4: Ø7 in tabs.', 'Vent holes if the coater asks.'], INK],
-      ['3', 'WELD 1: THE FRAME', ['Legs to base plates; beam on the legs;', 'tabs on the beam’s inside top edge.', 'Full seal welds. Check the top of the U', `is straight and the legs are ${f0(LL.height)} / ${f0(RL.height)} to the top.`], INK],
+      ['3', 'WELD 1: THE FRAME', ['Legs to base plates; beam on the legs;', `tabs ${D.tabs.weld} flat on the beam top.`, 'Full seal welds. Check the top of the U', `is straight and the legs are ${f0(LL.height)} / ${f0(RL.height)} to the top.`], INK],
       ['4', 'MASK', ['Mask a Ø70 BARE RING around every H1 hole,', 'on both faces of leg 2 (12 rings).', 'Plug H2 holes. Leave H3 / H4 open.', 'NO PIPES FITTED YET.'], BLUE],
       ['5', 'POWDER COAT', ['Abrasive blast, stainless-compatible primer,', 'black powder coat (exterior grade).', 'Cure. Remove masking. Rings stay', 'bare stainless.'], ACC],
       ['6', 'WELD 3a: INSIDE FERRULES', ['On the bench, butt-weld one ferrule to each', `tube (item 7, ${f1(D.pass.tube)} long).`, 'Back-purge, low heat.'], BLUE],
@@ -8562,6 +8586,58 @@ function makeFabPdf(jsPDF, D) {
       ['× weld anything to the frame after coating except the pipes, inside the rings', '× let powder or primer into the tube bores or onto the ferrule faces', '× grind the coat to make room for a weld', '× put pickling gel on the powder coat'].forEach((l, i) => txt(l, x0 + 3, y0 + 12 + i * 4.6, { size: 6.5 }));
     }
   }
+
+  // =====================================================================================
+  // SHEET 5: 3D VIEWS (rendered from the model)
+  // =====================================================================================
+  if (D.views && D.views.length) {
+    sheet(5);
+    const NAMES = { 1: 'LEFT LEG', 2: 'RIGHT LEG', 3: 'TOP BEAM', 4: 'BASE PLATE L', 5: 'BASE PLATE R', 6: 'CEILING TAB', 7: 'PASS-THROUGH TUBE', 8: 'TC FERRULE', 10: 'M10 ANCHOR', 11: 'BATTEN SCREW' };
+    const place = (v, x, y, w, h) => {
+      const ih = Math.min(h, (w * v.h) / v.w), iw = (ih * v.w) / v.h;
+      const ix = x + (w - iw) / 2, iy = y;
+      doc.addImage(v.img, 'JPEG', ix, iy, iw, ih);
+      pen(THIN, CL); doc.rect(ix, iy, iw, ih, 'S');
+      // view letter tag
+      fill([28, 28, 30]); doc.rect(ix, iy, 7, 7, 'F'); txt(v.key, ix + 3.5, iy + 5.1, { size: 9, bold: true, align: 'center', color: [255, 255, 255] });
+      const cx = ix + iw / 2, cy = iy + ih / 2;
+      for (const m of v.marks) {
+        const px = ix + m.u * iw, py = iy + m.v * ih;
+        let dx = px - cx, dy = py - cy; const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+        const off = 10;
+        let bx = Math.min(ix + iw - 5, Math.max(ix + 5, px + dx * off + 4 * Math.sign(dx || 1)));
+        let by = Math.min(iy + ih - 5, Math.max(iy + 9, py + dy * off));
+        if (m.n === 'R') {
+          pen(THIN, ACC); ln(px, py, bx, by); dot(px, py, 0.5, ACC);
+          fill([255, 255, 255]); pen(MED, ACC); doc.circle(bx, by, 3.2, 'FD');
+          txt('R', bx, by + 1.15, { align: 'center', size: 7.5, bold: true, color: ACC }); pen(THIN, INK);
+        } else balloon(m.n, bx, by, px, py);
+      }
+      txt(`VIEW ${v.key}: ${v.title}`, ix + iw / 2, iy + ih + 5.5, { size: 8, bold: true, align: 'center' });
+      txt('NOT TO SCALE', ix + iw / 2, iy + ih + 9, { size: 5.8, align: 'center', color: CL });
+      return ih;
+    };
+    const V = Object.fromEntries(D.views.map((v) => [v.key, v]));
+    if (V.A) place(V.A, 14, 16, 100, 178);
+    if (V.B) place(V.B, 118, 16, 100, 178);
+    const zs = ['C', 'D', 'E', 'F'].filter((k) => V[k]);
+    zs.forEach((k, i) => place(V[k], 224 + (i % 2) * 94, 16 + Math.floor(i / 2) * 98, 90, 82));
+    // legend and notes
+    {
+      const x0 = 14, y0 = 214;
+      txt('BALLOONS = PARTS LIST ITEMS (SHEET 1)', x0, y0, { size: 7.5, bold: true });
+      const keys = [1, 2, 3, 4, 5, 6, 7, 8, 10, 11];
+      keys.forEach((n, i) => {
+        const x = x0 + (i % 5) * 41, y = y0 + 7 + Math.floor(i / 5) * 8;
+        pen(MED); fill([255, 255, 255]); doc.circle(x + 2.6, y - 1, 2.6, 'FD');
+        txt(n, x + 2.6, y - 0.05, { size: 6.5, bold: true, align: 'center' });
+        txt(NAMES[n], x + 6.5, y, { size: 6.2 });
+      });
+      { const x = x0 + 5 * 41, y = y0 + 7; pen(MED, ACC); fill([255, 255, 255]); doc.circle(x + 2.6, y - 1, 2.6, 'FD'); txt('R', x + 2.6, y - 0.05, { size: 6.5, bold: true, align: 'center', color: ACC }); txt('Ø70 BARE RING (masked for coating)', x + 6.5, y, { size: 6.2, color: ACC }); pen(THIN, INK); }
+      txt('Rendered from the planner model in the finish chosen there. For orientation only: build to the dimensions on sheets 1 to 3,', x0, y0 + 27, { size: 6.2, color: CL });
+      txt('in the order on sheet 4. Side frames, headbox and shutter are not shown (by the shutter company).', x0, y0 + 30.5, { size: 6.2, color: CL });
+    }
+  }
   return doc;
 }
 
@@ -8577,8 +8653,12 @@ function fabData() {
   const plateT = 8;
   // tab bottom-surface profile (u along the tab from its start, v up from the beam top), same erf S as the model
   const sig = 0.012, c = P.tabS / 2, ea = erf(-c / sig), ez = erf(c / sig);
-  const S = (u) => (u >= P.tabS ? 1 : (erf((u - c) / sig) - ea) / (ez - ea));
+  const S = (u) => { u -= P.lap; return u <= 0 ? 0 : u >= P.tabS ? 1 : (erf((u - c) / sig) - ea) / (ez - ea); };
   const profile = Array.from({ length: 41 }, (_, i) => { const u = (P.tabL * i) / 40; return [mm1(u), mm1(P.rise * S(u))]; });
+  // developed (flat blank) length: arc length of the bent profile, so the blank and hole positions are true before bending
+  let arc = 0;
+  for (let i = 0, n = 2000, pu = 0, pv = 0; i <= n; i++) { const u = (P.tabL * i) / n, v = P.rise * S(u); if (i) arc += Math.hypot(u - pu, v - pv); pu = u; pv = v; }
+  const excess = arc - P.tabL;
   const leftHoles = [mm1(0.002 + 0.016 - x0), mm1(p.x1 - 0.014 - x0)];
   const rightHoles = [mm1(j.x0 + 0.015 - x0), mm1(j.x1 - 0.014 - x0)];
   const gf = L.guideFix || {};
@@ -8594,7 +8674,7 @@ function fabData() {
     rightLeg: { w: P.right * 1000, x0: mm1(j.x0 - x0), x1: width, height: mm1(b.y1 - yR), cut: mm1(b.y0 - yR) - plateT },
     tabs: {
       list: (cfg.nook.joists || []).map((jm) => ({ fromBrick: jm, x: mm1(W - jm / 1000 - x0) })).filter((t) => t.x - 22.5 >= 0 && t.x + 22.5 <= width),
-      w: P.tabW * 1000, l: P.tabL * 1000, s: P.tabS * 1000, rise: P.rise * 1000, t: P.tabT * 1000, weld: 12, holes: P.screws.map((u) => u * 1000), holeD: 7, profile,
+      w: P.tabW * 1000, l: P.tabL * 1000, s: P.tabS * 1000, rise: P.rise * 1000, t: P.tabT * 1000, weld: P.lap * 1000, holes: P.screws.map((u) => u * 1000), dev: mm1(arc), excess: mm1(excess), holesFlat: P.screws.map((u) => mm1(u + excess)), holeD: 7, profile,
     },
     pass: {
       x: mm1(j.xc - x0), fromBrick: mm1(W - j.xc), ys: [0, 1, 2].map((i) => mm1(j.pt - yR + i * PASS_PITCH)),
@@ -8612,6 +8692,96 @@ function fabData() {
       pitch: mm1(gf.pitch || 0),
     },
   };
+}
+
+/* 3D reference views of the U frame for the PDF: the frame's own meshes, re-rendered on white with outline edges */
+function renderUFrameViews() {
+  const L = layout;
+  if (!L?.uBeam || !L.dumpJamb || !L.postL) return [];
+  const { W } = dimsM();
+  const src = [];
+  scene.traverse((o) => { if (o.userData.uframe) src.push(o); });
+  const sc = new THREE.Scene();
+  sc.background = new THREE.Color(0xffffff);
+  sc.environment = scene.environment;
+  sc.environmentIntensity = 0.75;
+  sc.add(new THREE.HemisphereLight(0xffffff, 0xcfd2d6, 1.4));
+  const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(-1.5, 4, -2.5); sc.add(key);
+  const fillL = new THREE.DirectionalLight(0xffffff, 0.7); fillL.position.set(3, 1.5, 3); sc.add(fillL);
+  const root = new THREE.Group();
+  const lineDark = new THREE.LineBasicMaterial({ color: 0x1a1a1a }), lineLight = new THREE.LineBasicMaterial({ color: 0x9aa0a8 });
+  for (const o of src) {
+    o.updateWorldMatrix(true, true);
+    const c = o.clone(true);
+    c.matrixAutoUpdate = false; c.matrix.copy(o.matrixWorld);
+    root.add(c);
+  }
+  const meshes = [];
+  root.traverse((m) => { if (m.isMesh && !m.isInstancedMesh && m.geometry) meshes.push(m); });
+  for (const m of meshes) {
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 50), m.material === MAT.coatBlack ? lineLight : lineDark);
+    e.raycast = () => {};
+    m.add(e);
+  }
+  sc.add(root);
+  root.updateMatrixWorld(true);
+  const all = new THREE.Box3().setFromObject(root);
+  const p = L.postL, j = L.dumpJamb, b = L.uBeam;
+  const tabs = (cfg.nook.joists || []).map((jm) => W - jm / 1000).filter((x) => x > b.x0 && x < b.x1).sort((a, c) => c - a);
+  const tx = tabs[0] ?? W - 0.47;
+  const B3 = (x0, y0, z0, x1, y1, z1) => new THREE.Box3(V(x0, y0, z0), V(x1, y1, z1));
+  const passTop = j.pt + PASS_SPARE * PASS_PITCH;
+  const views = [
+    { key: 'A', title: 'FROM INSIDE THE NOOK (BRICK ON THE LEFT)', dir: V(0.75, 0.5, -1), box: all, pad: 0.04, w: 1100, h: 1900,
+      marks: [[1, V((p.x0 + p.x1) / 2, (p.yb + b.y0) * 0.55, p.z0)], [2, V(j.x0, (j.yb + b.y0) * 0.45, j.z0)], [3, V((b.x0 + b.x1) * 0.4, b.y0, b.z0)], [6, V(tx, b.y1 + 0.02, b.z0 - 0.09)], [4, V(p.x0 - 0.01, p.yb + 0.004, p.z0 - 0.05)], [5, V(j.x0 + 0.03, j.yb + 0.004, j.z0 - 0.05)], [8, V(j.xc, j.pt + PASS_PITCH, j.z0 - 0.04)]] },
+    { key: 'B', title: 'FROM OUTSIDE (BRICK ON THE RIGHT)', dir: V(-0.7, 0.4, 1), box: all, pad: 0.04, w: 1100, h: 1900,
+      marks: [[1, V(p.x1, (p.yb + b.y0) * 0.55, p.z1)], [2, V((j.x0 + j.x1) / 2, (j.yb + b.y0) * 0.5, j.z1)], [3, V((b.x0 + b.x1) / 2, b.y1, b.z1)], [8, V(j.xc, passTop, j.z1 + j.outLen)]] },
+    { key: 'C', title: 'CEILING TAB ON THE TOP BEAM', dir: V(-1, 0.1, -0.55), box: B3(tx - 0.03, b.y0 - 0.01, b.z0 + POST_C.lap - POST_C.tabL - 0.01, tx + 0.03, b.y1 + 0.1, b.z1 + 0.005), pad: 0.08, w: 1100, h: 1000,
+      marks: [[6, V(tx, b.y1 + POST_C.rise + 0.003, b.z0 - 0.07)], [3, V(tx - 0.02, b.y0 + 0.005, b.z1)], [11, V(tx, b.y1 + 0.075, b.z0 + POST_C.lap - POST_C.screws[1])]] },
+    { key: 'D', title: 'PASS-THROUGHS FROM OUTSIDE', dir: V(-0.9, 0.35, 1), box: B3(j.x0, j.pt - 0.05, j.z0 - 0.03, j.x1, passTop + 0.05, j.z1 + j.outLen + 0.005), pad: 0.08, w: 1100, h: 1000,
+      marks: [[8, V(j.xc - 0.02, passTop + 0.02, j.z1 + j.outLen)], [7, V(j.xc + 0.02, j.pt, j.z1 + j.outLen * 0.5)], ['R', V(j.xc - 0.033, j.pt + PASS_PITCH, j.z1)]] },
+    { key: 'E', title: 'TOP CORNER AT THE BRICK, FROM OUTSIDE', dir: V(-0.7, 0.45, 1), box: B3(j.x0 - 0.12, b.y0 - 0.16, b.z0, j.x1, b.y1 + 0.04, b.z1), pad: 0.1, w: 1100, h: 1000,
+      marks: [[3, V(j.x0 - 0.08, b.y1, b.z1)], [2, V((j.x0 + j.x1) / 2, b.y0 - 0.1, j.z1)]] },
+    { key: 'F', title: 'LEFT BASE PLATE AND ANCHORS', dir: V(0.8, 0.85, -1), box: B3(0, p.yb - 0.02, p.z0 - 0.08, p.x1 + 0.03, p.yb + 0.12, p.z1), pad: 0.1, w: 1100, h: 1000,
+      marks: [[4, V(0.012, p.yb + 0.008, p.z0 - 0.06)], [10, V(p.x1 - 0.014, p.yb + 0.016, p.z0 - 0.034)], [1, V((p.x0 + p.x1) / 2, p.yb + 0.09, p.z0)]] },
+  ];
+  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.05, 40);
+  const oldPR = renderer.getPixelRatio(), oldSize = renderer.getSize(new THREE.Vector2());
+  const oldTM = renderer.toneMappingExposure;
+  const out = [];
+  renderer.setPixelRatio(1);
+  try {
+    for (const v of views) {
+      const c = v.box.getCenter(new THREE.Vector3());
+      cam.position.copy(c).addScaledVector(v.dir.clone().normalize(), 12);
+      cam.up.set(0, 1, 0); cam.lookAt(c); cam.updateMatrixWorld(true);
+      const inv = cam.matrixWorldInverse;
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (let i = 0; i < 8; i++) {
+        const q = V(i & 1 ? v.box.max.x : v.box.min.x, i & 2 ? v.box.max.y : v.box.min.y, i & 4 ? v.box.max.z : v.box.min.z).applyMatrix4(inv);
+        x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
+      }
+      let hw = (x1 - x0) / 2 * (1 + v.pad), hh = (y1 - y0) / 2 * (1 + v.pad);
+      const asp = v.w / v.h;
+      if (hw / hh > asp) hh = hw / asp; else hw = hh * asp;
+      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+      Object.assign(cam, { left: mx - hw, right: mx + hw, top: my + hh, bottom: my - hh });
+      cam.updateProjectionMatrix();
+      renderer.setSize(v.w, v.h, false);
+      renderer.toneMappingExposure = 1;
+      renderer.render(sc, cam);
+      const img = renderer.domElement.toDataURL('image/jpeg', 0.92);
+      const marks = v.marks.map(([n, pt]) => { const q = pt.clone().project(cam); return { n, u: (q.x + 1) / 2, v: (1 - q.y) / 2 }; }).filter((m) => m.u > 0.02 && m.u < 0.98 && m.v > 0.02 && m.v < 0.98);
+      out.push({ key: v.key, title: v.title, img, w: v.w, h: v.h, marks });
+    }
+  } finally {
+    renderer.setPixelRatio(oldPR);
+    renderer.setSize(oldSize.x, oldSize.y, false);
+    renderer.toneMappingExposure = oldTM;
+    root.traverse((m) => { if (m.isLineSegments) m.geometry.dispose(); });
+    needsRender = true;
+  }
+  return out;
 }
 let jspdfLoading = null;
 function loadJsPdf() {
@@ -8632,6 +8802,7 @@ async function exportFabPdf(btn) {
   if (btn) { btn.disabled = true; btn.textContent = 'Drawing the sheets…'; }
   try {
     const jsPDF = await loadJsPdf();
+    D.views = renderUFrameViews();
     const doc = makeFabPdf(jsPDF, D);
     doc.save(`U-frame-fabrication-A3-${D.date}.pdf`);
     if (btn) btn.textContent = 'Saved: U-frame drawings (A3 PDF)';
@@ -8641,7 +8812,7 @@ async function exportFabPdf(btn) {
     if (btn) setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 2500);
   }
 }
-window.__fab = { fabData, loadJsPdf, makeFabPdf: (...a) => makeFabPdf(...a) };
+window.__fab = { fabData, loadJsPdf, renderUFrameViews, makeFabPdf: (...a) => makeFabPdf(...a) };
 
 function buildPanel() {
   syncers.length = 0;

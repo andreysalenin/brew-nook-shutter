@@ -2407,7 +2407,7 @@ function dumpCentre(W) { return layout?.dumpJamb?.xc ?? W - DUMP_JAMB / 2; }
 // option C posts: 50 × 50 × 3 SHS left, 100 × 50 × 3 RHS right (100 across the opening); side frames overlap them 30 mm
 const CEIL = { trim: 0.018, wb: 0.009, wbDrop: 0.007, face: 0.014 }; // weatherboard face is 14 mm in front of the white wall corner // ceiling edge at the opening: trim, then weatherboard 7 mm lower
 const POST_C = { left: 0.05, right: 0.1, d: 0.05, overlap: 0.03, frameW: 0.06, frameD: 0.055,
-  beamH: 0.025, tabW: 0.045, tabL: 0.15, tabS: 0.065, tabT: 0.003, rise: 0.022, screws: [0.095, 0.135] }; // S over the first 65 mm, then flat // tab: 3 + 22 = 7 + 18 (weatherboard lip + trim) // top beam 50 × 25 RHS; S-bent ceiling tabs
+  beamH: 0.025, tabW: 0.045, tabL: 0.174, lap: 0.036, tabS: 0.065, tabT: 0.003, rise: 0.022, screws: [0.119, 0.159] }; // 36 flat on the beam (stops 5 short of the weatherboard lip), S over 65 mm, then flat // tab: 3 + 22 = 7 + 18 (weatherboard lip + trim) // top beam 50 × 25 RHS; S-bent ceiling tabs
 function erf(x) { // Abramowitz & Stegun 7.1.26
   const s = Math.sign(x), a = Math.abs(x), t = 1 / (1 + 0.3275911 * a);
   return s * (1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-a * a));
@@ -2578,6 +2578,7 @@ function buildLeftPostC(L, grp) {
     tip(a, 'Slab anchor', `M10 316 anchor through the inside tab, 80 mm into the slab, in line with the right leg's anchors`);
     post.add(a);
   }
+  post.userData.uframe = true;
   tip(post, 'Left leg of the U frame', `50 × 50 × 3 316 SHS just clear of the white wall step, its outside face flush with the weatherboard over the opening (14 mm in front of the corner), welded to the top beam. Slab anchors at the bottom; nothing fixed into the shared wall. M6 rivnuts down the outside face for the side frame.${cfg.shutter.uFinish === 'black' ? ' Powder-coated black.' : ''}`);
   grp.add(post);
   buildUBeam(L, grp);
@@ -2591,12 +2592,13 @@ function buildUBeam(L, grp) {
   const b = L.uBeam, fin = uFin(), P = POST_C;
   const g = new THREE.Group();
   g.userData.role = 'struct';
+  g.userData.uframe = true;
   g.add(boxAt(b.x0, b.y0, b.z0, b.x1, b.y1, b.z1, fin));
   tip(g, 'Top beam of the U frame', `50 × 25 × 3 316 RHS, ${Math.round((b.x1 - b.x0) * 1000)} mm, welded across the tops of both legs, ${Math.round((H - b.y0) * 1000)} mm below the ceiling at its underside`);
   // tab profile: flat on the beam's inside top edge, then an erf-shaped S that rises onto the ceiling
-  const sig = 0.012, L0 = 0.012, n = 32;
-  // erf S over the first tabS, then flat along the plasterboard for the two screws
-  const S = (u) => { const c = P.tabS / 2, a = erf(-c / sig), z = erf(c / sig); return u >= P.tabS ? 1 : (erf((u - c) / sig) - a) / (z - a); };
+  const sig = 0.012, L0 = P.lap, n = 48;
+  // flat across the beam top for the lap, erf S over tabS from the beam's inside edge, then flat along the plasterboard for the two screws
+  const S = (u) => { u -= P.lap; const c = P.tabS / 2, a = erf(-c / sig), z = erf(c / sig); return u <= 0 ? 0 : u >= P.tabS ? 1 : (erf((u - c) / sig) - a) / (z - a); };
   const top = [], bot = [];
   for (let i = 0; i <= n; i++) {
     const u = (P.tabL * i) / n, v = P.rise * S(u);
@@ -2615,7 +2617,7 @@ function buildUBeam(L, grp) {
     tg.translate(xj - P.tabW / 2, b.y1, b.z0 + L0);
     const tab = mesh(tg, fin);
     tab.userData.role = 'struct';
-    tip(tab, 'Ceiling tab', `45 × ${Math.round(P.tabL * 1000)} × 3 mm 316 tab welded on the beam's inside top edge, S-bent to rise ${Math.round(P.rise * 1000)} mm over the first ${Math.round(P.tabS * 1000)} mm, then flat on the plasterboard under the joist ${jm} mm from the brick`);
+    tip(tab, 'Ceiling tab', `45 × ${Math.round(P.tabL * 1000)} × 3 mm 316 tab, flat across ${Math.round(P.lap * 1000)} mm of the beam top and welded down both sides and across its end, then S-bent to rise ${Math.round(P.rise * 1000)} mm over the first ${Math.round(P.tabS * 1000)} mm, then flat on the plasterboard under the joist ${jm} mm from the brick`);
     g.add(tab);
     for (const u of P.screws) {
       const dx = 0, z = b.z0 + L0 - u;
@@ -2676,8 +2678,18 @@ function buildDumpJamb(L, grp) {
     const p = (z) => pc(z).add(V(0, i * PASS_PITCH, 0));
     ferrule(post, p(j.z0), V(0, 0, -1));
     ferrule(post, p(j.z1), V(0, 0, 1), j.outLen);
+    if (j.rhs && fin === MAT.coatBlack) {
+      // Ø70 bare-stainless rings, masked during powder coating, on both faces around each tube
+      for (const [z, ry] of [[j.z0 - 0.0004, PI], [j.z1 + 0.0004, 0]]) {
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.0196, 0.035, 40), MAT.ssDull);
+        ring.position.copy(p(z)); ring.rotation.y = ry;
+        tip(ring, 'Bare ring', 'Ø70 masked during powder coating: bare 316 where the pipe is welded in after coating');
+        post.add(ring);
+      }
+    }
   }
   tip(post, j.rhs ? 'Right post: 100 × 50 dump post' : 'Dump jamb: the one custom part', j.rhs ? `100 × 50 × 3 316 RHS against the brick, 100 across the opening. Base tab with two slab anchors, a cleat with two screws into the ceiling framing; nothing drilled into the brick. The side frame overlaps the 30 mm of its outside face nearest the opening; the three 1.5" TC pass-throughs sit centred in the other 70 mm, ${Math.round((L.W - j.xc) * 1000)} mm off the brick, with the outside ferrules long enough that the clamps sit in front of the frame.` : (j.brick ? '75 × 75 × 3 316 stainless post against the brick, on a base plate anchored to the slab and held by two cleats anchored into the brick; the right guide screws onto its face.' : '75 × 75 × 3 316 stainless post against the brick, on a base plate anchored to the slab and cleated into the ceiling framing; nothing is drilled into the brick.') + ' Three 1.5" TC pass-throughs at the bottom: the lowest carries the dump hose under the shutter line, the two above are spares, capped.');
+  if (j.rhs && L.uBeam) post.userData.uframe = true;
   grp.add(post);
   const seal = boxAt(j.x1 - 0.0005, j.yb + 0.03, j.z0 + 0.005, j.x1, j.y1 - 0.08, j.z1 - 0.005, MAT.rubber);
   tip(seal, 'EPDM seal strip', 'Stuck to the post, closing the gap against the uneven brick');
@@ -3084,8 +3096,12 @@ function fabData() {
   const plateT = 8;
   // tab bottom-surface profile (u along the tab from its start, v up from the beam top), same erf S as the model
   const sig = 0.012, c = P.tabS / 2, ea = erf(-c / sig), ez = erf(c / sig);
-  const S = (u) => (u >= P.tabS ? 1 : (erf((u - c) / sig) - ea) / (ez - ea));
+  const S = (u) => { u -= P.lap; return u <= 0 ? 0 : u >= P.tabS ? 1 : (erf((u - c) / sig) - ea) / (ez - ea); };
   const profile = Array.from({ length: 41 }, (_, i) => { const u = (P.tabL * i) / 40; return [mm1(u), mm1(P.rise * S(u))]; });
+  // developed (flat blank) length: arc length of the bent profile, so the blank and hole positions are true before bending
+  let arc = 0;
+  for (let i = 0, n = 2000, pu = 0, pv = 0; i <= n; i++) { const u = (P.tabL * i) / n, v = P.rise * S(u); if (i) arc += Math.hypot(u - pu, v - pv); pu = u; pv = v; }
+  const excess = arc - P.tabL;
   const leftHoles = [mm1(0.002 + 0.016 - x0), mm1(p.x1 - 0.014 - x0)];
   const rightHoles = [mm1(j.x0 + 0.015 - x0), mm1(j.x1 - 0.014 - x0)];
   const gf = L.guideFix || {};
@@ -3101,7 +3117,7 @@ function fabData() {
     rightLeg: { w: P.right * 1000, x0: mm1(j.x0 - x0), x1: width, height: mm1(b.y1 - yR), cut: mm1(b.y0 - yR) - plateT },
     tabs: {
       list: (cfg.nook.joists || []).map((jm) => ({ fromBrick: jm, x: mm1(W - jm / 1000 - x0) })).filter((t) => t.x - 22.5 >= 0 && t.x + 22.5 <= width),
-      w: P.tabW * 1000, l: P.tabL * 1000, s: P.tabS * 1000, rise: P.rise * 1000, t: P.tabT * 1000, weld: 12, holes: P.screws.map((u) => u * 1000), holeD: 7, profile,
+      w: P.tabW * 1000, l: P.tabL * 1000, s: P.tabS * 1000, rise: P.rise * 1000, t: P.tabT * 1000, weld: P.lap * 1000, holes: P.screws.map((u) => u * 1000), dev: mm1(arc), excess: mm1(excess), holesFlat: P.screws.map((u) => mm1(u + excess)), holeD: 7, profile,
     },
     pass: {
       x: mm1(j.xc - x0), fromBrick: mm1(W - j.xc), ys: [0, 1, 2].map((i) => mm1(j.pt - yR + i * PASS_PITCH)),
@@ -3119,6 +3135,96 @@ function fabData() {
       pitch: mm1(gf.pitch || 0),
     },
   };
+}
+
+/* 3D reference views of the U frame for the PDF: the frame's own meshes, re-rendered on white with outline edges */
+function renderUFrameViews() {
+  const L = layout;
+  if (!L?.uBeam || !L.dumpJamb || !L.postL) return [];
+  const { W } = dimsM();
+  const src = [];
+  scene.traverse((o) => { if (o.userData.uframe) src.push(o); });
+  const sc = new THREE.Scene();
+  sc.background = new THREE.Color(0xffffff);
+  sc.environment = scene.environment;
+  sc.environmentIntensity = 0.75;
+  sc.add(new THREE.HemisphereLight(0xffffff, 0xcfd2d6, 1.4));
+  const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(-1.5, 4, -2.5); sc.add(key);
+  const fillL = new THREE.DirectionalLight(0xffffff, 0.7); fillL.position.set(3, 1.5, 3); sc.add(fillL);
+  const root = new THREE.Group();
+  const lineDark = new THREE.LineBasicMaterial({ color: 0x1a1a1a }), lineLight = new THREE.LineBasicMaterial({ color: 0x9aa0a8 });
+  for (const o of src) {
+    o.updateWorldMatrix(true, true);
+    const c = o.clone(true);
+    c.matrixAutoUpdate = false; c.matrix.copy(o.matrixWorld);
+    root.add(c);
+  }
+  const meshes = [];
+  root.traverse((m) => { if (m.isMesh && !m.isInstancedMesh && m.geometry) meshes.push(m); });
+  for (const m of meshes) {
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 50), m.material === MAT.coatBlack ? lineLight : lineDark);
+    e.raycast = () => {};
+    m.add(e);
+  }
+  sc.add(root);
+  root.updateMatrixWorld(true);
+  const all = new THREE.Box3().setFromObject(root);
+  const p = L.postL, j = L.dumpJamb, b = L.uBeam;
+  const tabs = (cfg.nook.joists || []).map((jm) => W - jm / 1000).filter((x) => x > b.x0 && x < b.x1).sort((a, c) => c - a);
+  const tx = tabs[0] ?? W - 0.47;
+  const B3 = (x0, y0, z0, x1, y1, z1) => new THREE.Box3(V(x0, y0, z0), V(x1, y1, z1));
+  const passTop = j.pt + PASS_SPARE * PASS_PITCH;
+  const views = [
+    { key: 'A', title: 'FROM INSIDE THE NOOK (BRICK ON THE LEFT)', dir: V(0.75, 0.5, -1), box: all, pad: 0.04, w: 1100, h: 1900,
+      marks: [[1, V((p.x0 + p.x1) / 2, (p.yb + b.y0) * 0.55, p.z0)], [2, V(j.x0, (j.yb + b.y0) * 0.45, j.z0)], [3, V((b.x0 + b.x1) * 0.4, b.y0, b.z0)], [6, V(tx, b.y1 + 0.02, b.z0 - 0.09)], [4, V(p.x0 - 0.01, p.yb + 0.004, p.z0 - 0.05)], [5, V(j.x0 + 0.03, j.yb + 0.004, j.z0 - 0.05)], [8, V(j.xc, j.pt + PASS_PITCH, j.z0 - 0.04)]] },
+    { key: 'B', title: 'FROM OUTSIDE (BRICK ON THE RIGHT)', dir: V(-0.7, 0.4, 1), box: all, pad: 0.04, w: 1100, h: 1900,
+      marks: [[1, V(p.x1, (p.yb + b.y0) * 0.55, p.z1)], [2, V((j.x0 + j.x1) / 2, (j.yb + b.y0) * 0.5, j.z1)], [3, V((b.x0 + b.x1) / 2, b.y1, b.z1)], [8, V(j.xc, passTop, j.z1 + j.outLen)]] },
+    { key: 'C', title: 'CEILING TAB ON THE TOP BEAM', dir: V(-1, 0.1, -0.55), box: B3(tx - 0.03, b.y0 - 0.01, b.z0 + POST_C.lap - POST_C.tabL - 0.01, tx + 0.03, b.y1 + 0.1, b.z1 + 0.005), pad: 0.08, w: 1100, h: 1000,
+      marks: [[6, V(tx, b.y1 + POST_C.rise + 0.003, b.z0 - 0.07)], [3, V(tx - 0.02, b.y0 + 0.005, b.z1)], [11, V(tx, b.y1 + 0.075, b.z0 + POST_C.lap - POST_C.screws[1])]] },
+    { key: 'D', title: 'PASS-THROUGHS FROM OUTSIDE', dir: V(-0.9, 0.35, 1), box: B3(j.x0, j.pt - 0.05, j.z0 - 0.03, j.x1, passTop + 0.05, j.z1 + j.outLen + 0.005), pad: 0.08, w: 1100, h: 1000,
+      marks: [[8, V(j.xc - 0.02, passTop + 0.02, j.z1 + j.outLen)], [7, V(j.xc + 0.02, j.pt, j.z1 + j.outLen * 0.5)], ['R', V(j.xc - 0.033, j.pt + PASS_PITCH, j.z1)]] },
+    { key: 'E', title: 'TOP CORNER AT THE BRICK, FROM OUTSIDE', dir: V(-0.7, 0.45, 1), box: B3(j.x0 - 0.12, b.y0 - 0.16, b.z0, j.x1, b.y1 + 0.04, b.z1), pad: 0.1, w: 1100, h: 1000,
+      marks: [[3, V(j.x0 - 0.08, b.y1, b.z1)], [2, V((j.x0 + j.x1) / 2, b.y0 - 0.1, j.z1)]] },
+    { key: 'F', title: 'LEFT BASE PLATE AND ANCHORS', dir: V(0.8, 0.85, -1), box: B3(0, p.yb - 0.02, p.z0 - 0.08, p.x1 + 0.03, p.yb + 0.12, p.z1), pad: 0.1, w: 1100, h: 1000,
+      marks: [[4, V(0.012, p.yb + 0.008, p.z0 - 0.06)], [10, V(p.x1 - 0.014, p.yb + 0.016, p.z0 - 0.034)], [1, V((p.x0 + p.x1) / 2, p.yb + 0.09, p.z0)]] },
+  ];
+  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.05, 40);
+  const oldPR = renderer.getPixelRatio(), oldSize = renderer.getSize(new THREE.Vector2());
+  const oldTM = renderer.toneMappingExposure;
+  const out = [];
+  renderer.setPixelRatio(1);
+  try {
+    for (const v of views) {
+      const c = v.box.getCenter(new THREE.Vector3());
+      cam.position.copy(c).addScaledVector(v.dir.clone().normalize(), 12);
+      cam.up.set(0, 1, 0); cam.lookAt(c); cam.updateMatrixWorld(true);
+      const inv = cam.matrixWorldInverse;
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (let i = 0; i < 8; i++) {
+        const q = V(i & 1 ? v.box.max.x : v.box.min.x, i & 2 ? v.box.max.y : v.box.min.y, i & 4 ? v.box.max.z : v.box.min.z).applyMatrix4(inv);
+        x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
+      }
+      let hw = (x1 - x0) / 2 * (1 + v.pad), hh = (y1 - y0) / 2 * (1 + v.pad);
+      const asp = v.w / v.h;
+      if (hw / hh > asp) hh = hw / asp; else hw = hh * asp;
+      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+      Object.assign(cam, { left: mx - hw, right: mx + hw, top: my + hh, bottom: my - hh });
+      cam.updateProjectionMatrix();
+      renderer.setSize(v.w, v.h, false);
+      renderer.toneMappingExposure = 1;
+      renderer.render(sc, cam);
+      const img = renderer.domElement.toDataURL('image/jpeg', 0.92);
+      const marks = v.marks.map(([n, pt]) => { const q = pt.clone().project(cam); return { n, u: (q.x + 1) / 2, v: (1 - q.y) / 2 }; }).filter((m) => m.u > 0.02 && m.u < 0.98 && m.v > 0.02 && m.v < 0.98);
+      out.push({ key: v.key, title: v.title, img, w: v.w, h: v.h, marks });
+    }
+  } finally {
+    renderer.setPixelRatio(oldPR);
+    renderer.setSize(oldSize.x, oldSize.y, false);
+    renderer.toneMappingExposure = oldTM;
+    root.traverse((m) => { if (m.isLineSegments) m.geometry.dispose(); });
+    needsRender = true;
+  }
+  return out;
 }
 let jspdfLoading = null;
 function loadJsPdf() {
@@ -3139,6 +3245,7 @@ async function exportFabPdf(btn) {
   if (btn) { btn.disabled = true; btn.textContent = 'Drawing the sheets…'; }
   try {
     const jsPDF = await loadJsPdf();
+    D.views = renderUFrameViews();
     const doc = makeFabPdf(jsPDF, D);
     doc.save(`U-frame-fabrication-A3-${D.date}.pdf`);
     if (btn) btn.textContent = 'Saved: U-frame drawings (A3 PDF)';
@@ -3148,7 +3255,7 @@ async function exportFabPdf(btn) {
     if (btn) setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 2500);
   }
 }
-window.__fab = { fabData, loadJsPdf, makeFabPdf: (...a) => makeFabPdf(...a) };
+window.__fab = { fabData, loadJsPdf, renderUFrameViews, makeFabPdf: (...a) => makeFabPdf(...a) };
 
 function buildPanel() {
   syncers.length = 0;

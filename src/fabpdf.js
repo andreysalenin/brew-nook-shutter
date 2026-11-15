@@ -5,6 +5,7 @@ function makeFabPdf(jsPDF, D) {
   const PW = 420, PH = 297;
   const INK = [24, 24, 27], CL = [110, 110, 116], ACC = [214, 88, 22], BLUE = [28, 88, 168], COAT = [52, 52, 56], SOFT = [236, 236, 238], BARE = [196, 200, 206];
   const SHEETS = ['GENERAL ARRANGEMENT', 'DETAILS: PASS-THROUGHS, BASE PLATES, CEILING TABS', 'DRILLING, RIVNUTS AND FIXINGS', 'FABRICATION AND FINISH SEQUENCE'];
+  if (D.views && D.views.length) SHEETS.push('3D VIEWS (REFERENCE, NOT TO SCALE)');
   const f1 = (v) => (Math.round(v * 10) / 10).toString();
   const f0 = (v) => Math.round(v).toString();
   const black = D.finish === 'black';
@@ -228,7 +229,7 @@ function makeFabPdf(jsPDF, D) {
   sectionMark(E.X(Wd - 50), E.Y(top) - 21, 'A', [1, 0]);
   sectionMark(E.X(Wd - 50), E.Y(-90), 'A', [1, 0]);
   pen(THIN, INK, [4, 1, 1, 1]); ln(E.X(Wd - 50), E.Y(top) - 18, E.X(Wd - 50), E.Y(-90) - 3);
-  viewTitle(E.X(Wd / 2), 272, 'FRONT ELEVATION, FROM INSIDE THE NOOK', '1 : 12.5', 'weatherboard left, brick right');
+  viewTitle(E.X(Wd / 2), 272, 'FRONT ELEVATION, FROM OUTSIDE', '1 : 12.5', 'weatherboard left, brick right; tabs and inside ferrules behind');
 
   // section A-A through the right leg (side view; nook to the left, outside to the right)
   {
@@ -262,7 +263,7 @@ function makeFabPdf(jsPDF, D) {
       ['3', 'Top beam, 50 × 25 × 3 RHS', `${f1(Wd)} long`, '1'],
       ['4', 'Base plate L, 8 thk', `${f1(D.plates.left.x1 - D.plates.left.x0)} × 110, notched`, '1'],
       ['5', 'Base plate R, 8 thk', `${f1(RL.w)} × 110`, '1'],
-      ['6', 'Ceiling tab, 3 thk, S-bent', `${D.tabs.w} × ${D.tabs.l}`, String(D.tabs.list.length)],
+      ['6', 'Ceiling tab, 3 thk, S-bent', `${D.tabs.w} × ${f1(D.tabs.dev)} blank`, String(D.tabs.list.length)],
       ['7', 'Pass-through tube Ø38.1 × 1.65', `${f1(D.pass.tube)} long`, '3'],
       ['8', '1.5" TC weld ferrule (21.5 long)', 'standard', '6'],
       ['9', 'M6 rivnut, 316, flanged', 'fit after coating', String(D.rivnuts.L.ys.length + D.rivnuts.R.ys.length)],
@@ -291,8 +292,8 @@ function makeFabPdf(jsPDF, D) {
       `2. Heights are measured from the slab at each leg; the slab falls ${f1(yL0)} from left to right.`,
       '   Cut legs to suit: the TOP OF THE U must be level and butt the weatherboard lip.',
       '3. Top beam sits on the legs; seal-weld all round (no open ends).',
-      `4. Ceiling tabs: 3 thk, S-bent ${D.tabs.rise} rise over ${D.tabs.s}, flat ${D.tabs.l - D.tabs.s}. Weld to the`,
-      `   beam's inside top edge (${D.tabs.weld} lap) on the joist centrelines. See sheet 2.`,
+      `4. Ceiling tabs: 3 thk, ${D.tabs.l} long: ${D.tabs.weld} flat on the beam, S-bent ${D.tabs.rise} rise over ${D.tabs.s}, flat ${D.tabs.l - D.tabs.weld - D.tabs.s}. Weld to the`,
+      `   beam top (${D.tabs.weld} lap, both sides + end) on the joist centrelines. See sheet 2.`,
       '5. Pass-throughs (3 off, right leg): see sheet 2 and the sequence on sheet 4.',
       '   Tubes are welded in AFTER powder coating, inside bare masked rings.',
       `6. Finish: ${black ? 'blast, stainless primer, black powder coat. Ferrules, tube stubs' : 'bare 316, pickled and passivated.'}`,
@@ -472,7 +473,7 @@ function makeFabPdf(jsPDF, D) {
     const ZX = (zin) => ox - (zin - 50) * s; // NOT USED
     const TX = (u) => ox + u * s; // u: along the tab, from the beam's inside face toward the nook (to the right)
     const TY = (v) => oy - v * s;
-    const py0 = 235;
+    const py0 = 240;
     // beam section (cut), outside face to the left
     pen(THICK); doc.rect(TX(-50), TY(0), 50 * s, bH * s); hatch(TX(-50), TY(0), TX(0), TY(-bH), 0.9);
     pen(THIN); doc.rect(TX(-47), TY(-3), 44 * s, (bH - 6) * s, 'S');
@@ -486,32 +487,43 @@ function makeFabPdf(jsPDF, D) {
     // plasterboard + joist (context)
     pen(THIN, CL); doc.rect(TX(-60), TY(D.tabs.rise + D.tabs.t + 13), 220 * s, 13 * s); hatch(TX(-60), TY(D.tabs.rise + D.tabs.t + 13), TX(160), TY(D.tabs.rise + D.tabs.t), 2.4, CL);
     txt('PLASTERBOARD 13 (JOIST ABOVE)', TX(-60), TY(D.tabs.rise + D.tabs.t + 13) - 1.5, { size: 5.5, color: CL });
+    // weatherboard lip (9) and 18 x 18 trim over the beam's outer half: why the lap stops where it does
+    {
+      const lipU0 = -50, lipU1 = -50 + 9, trU1 = lipU1 + 18, trY0 = D.tabs.rise + D.tabs.t - 18;
+      pen(THIN, CL); fill([238, 238, 236]);
+      doc.rect(TX(lipU0), TY(D.tabs.rise + D.tabs.t + 13), 9 * s, (D.tabs.rise + D.tabs.t + 13) * s, 'FD');
+      doc.rect(TX(lipU1), TY(D.tabs.rise + D.tabs.t), 18 * s, 18 * s, 'FD');
+      txt('WB LIP 9', TX(lipU0) - 1, TY(D.tabs.rise * 0.5), { size: 5.2, color: CL, align: 'right' });
+      txt('TRIM 18', TX(lipU1 + 9), TY(trY0) - 1.2, { size: 5.2, color: CL, align: 'center' });
+      const tabEnd = -D.tabs.weld;
+      txt(`lap ends ${f1(tabEnd - lipU1)} short of the WB lip`, TX(-50) - 12, TY(-bH) + 23, { size: 5.6, color: CL });
+    }
     // screws
     for (const u of D.tabs.holes) centreLineV(TX(u - D.tabs.weld), TY(D.tabs.rise + D.tabs.t + 20), TY(D.tabs.rise - 6));
     // dims
-    dimH(TX(prof[0][0]), TX(0), TY(-bH) + 6, TY(0), TY(-bH), f1(D.tabs.weld), { size: 6.5 });
-    dimH(TX(prof[0][0]), TX(le[0]), TY(-bH) + 13, TY(0), TY(le[1]), `${D.tabs.l} TAB LENGTH (FLAT)`, { size: 6.5, bold: true });
+    dimH(TX(prof[0][0]), TX(0), TY(-bH) + 12, TY(0), TY(-bH), `${f1(D.tabs.weld)} LAP`, { size: 6.5 });
+    dimH(TX(prof[0][0]), TX(le[0]), TY(-bH) + 18, TY(0), TY(le[1]), `${D.tabs.l} OVERALL, AS BENT`, { size: 6.5, bold: true });
     dimH(TX(prof[0][0]), TX(prof[0][0] + D.tabs.s), TY(D.tabs.rise + D.tabs.t + 13) - 5, TY(D.tabs.t), TY(D.tabs.rise + D.tabs.t), `${D.tabs.s} S-BEND`, { size: 6.5 });
 
     dimV(TY(0), TY(D.tabs.rise), TX(le[0]) + 6, TX(le[0]), TX(le[0]), `${D.tabs.rise} RISE`, { size: 6.5, bold: true });
     dimV(TY(D.tabs.rise), TY(D.tabs.rise + D.tabs.t), TX(le[0]) + 13, TX(le[0]), TX(le[0]), f1(D.tabs.t), { size: 6.5 });
     dimV(TY(-bH), TY(0), TX(-50) - 5, TX(-50), TX(-50), f1(bH), { size: 6.5 });
     dimH(TX(-50), TX(0), TY(-bH) + 6, TY(-bH), TY(-bH), '50', { size: 6.5 });
-    weldSymbol(TX(prof[0][0] + 1), TY(0), TX(60), TY(-bH) + 21, '3', false, { note: 'WELD 1, BOTH SIDES' });
-    txt('3 + 22 = 7 + 18  (tab + rise = weatherboard lip + trim)', TX(D.tabs.l / 2 - D.tabs.weld), py0 + D.tabs.w * s + 12.5, { size: 6, color: CL, align: 'center' });
+    weldSymbol(TX(prof[0][0] + 1), TY(0), TX(66), TY(-bH) + 25, '3', false, { note: 'WELD 1, BOTH SIDES + END' });
+    txt('3 + 22 = 7 + 18  (tab + rise = WB lip + trim)', TX(-50) - 12, TY(-bH) + 26.5, { size: 5.6, color: CL });
     // tab flat pattern (plan)
     const FX = (u) => TX(-D.tabs.weld + u);
-    pen(THICK); doc.rect(FX(0), py0, D.tabs.l * s, D.tabs.w * s);
-    centreLineH(FX(0) - 3, FX(D.tabs.l) + 3, py0 + (D.tabs.w / 2) * s);
-    for (const u of D.tabs.holes) { pen(THICK); fill([255, 255, 255]); doc.circle(FX(u), py0 + (D.tabs.w / 2) * s, (D.tabs.holeD / 2) * s, 'FD'); crossMark(FX(u), py0 + (D.tabs.w / 2) * s, (D.tabs.holeD / 2) * s); }
-    pen(THIN, INK, [1.2, 0.8]); ln(FX(D.tabs.weld), py0, FX(D.tabs.weld), py0 + D.tabs.w * s); ln(FX(D.tabs.weld + D.tabs.s), py0, FX(D.tabs.weld + D.tabs.s), py0 + D.tabs.w * s);
+    pen(THICK); doc.rect(FX(0), py0, D.tabs.dev * s, D.tabs.w * s);
+    centreLineH(FX(0) - 3, FX(D.tabs.dev) + 3, py0 + (D.tabs.w / 2) * s);
+    for (const u of D.tabs.holesFlat) { pen(THICK); fill([255, 255, 255]); doc.circle(FX(u), py0 + (D.tabs.w / 2) * s, (D.tabs.holeD / 2) * s, 'FD'); crossMark(FX(u), py0 + (D.tabs.w / 2) * s, (D.tabs.holeD / 2) * s); }
+    pen(THIN, INK, [1.2, 0.8]); ln(FX(D.tabs.weld), py0, FX(D.tabs.weld), py0 + D.tabs.w * s); ln(FX(D.tabs.weld + D.tabs.s + D.tabs.excess), py0, FX(D.tabs.weld + D.tabs.s + D.tabs.excess), py0 + D.tabs.w * s);
     dimV(py0, py0 + D.tabs.w * s, FX(0) - 5, FX(0), FX(0), f1(D.tabs.w), { size: 6.5 });
-    dimH(FX(0), FX(D.tabs.holes[0]), py0 - 4, py0, py0 + 4, f1(D.tabs.holes[0]), { size: 6.5 });
-    dimH(FX(D.tabs.holes[0]), FX(D.tabs.holes[1]), py0 - 4, py0 + 4, py0 + 4, f1(D.tabs.holes[1] - D.tabs.holes[0]), { size: 6.5 });
-    leader(FX(D.tabs.holes[0]) - 1.5, py0 + (D.tabs.w / 2) * s + 1.5, FX(0) - 4, py0 + D.tabs.w * s + 3, [`2 × Ø${D.tabs.holeD} ON CL`, 'in line with the joist'], { size: 6 });
-    txt('BEND LINES (dashed)', FX(D.tabs.weld + D.tabs.s / 2), py0 + D.tabs.w * s + 4, { size: 5.5, color: CL, align: 'center' });
-    txt(`ITEM 6: CEILING TAB, 3 THK × ${D.tabs.list.length}`, FX(D.tabs.l / 2), py0 + D.tabs.w * s + 8.5, { size: 7, bold: true, align: 'center' });
-    viewTitle(TX(40), 272, 'DETAIL D: CEILING TAB', '1 : 2.5', 'profile (top) and flat pattern; nook to the right');
+    dimH(FX(0), FX(D.tabs.holesFlat[0]), py0 - 4, py0, py0 + 4, f1(D.tabs.holesFlat[0]), { size: 6.5 });
+    dimH(FX(D.tabs.holesFlat[0]), FX(D.tabs.holesFlat[1]), py0 - 4, py0 + 4, py0 + 4, f1(D.tabs.holesFlat[1] - D.tabs.holesFlat[0]), { size: 6.5 });
+    dimH(FX(0), FX(D.tabs.dev), py0 + D.tabs.w * s + 4, py0 + D.tabs.w * s, py0 + D.tabs.w * s, `${f1(D.tabs.dev)} BLANK`, { size: 6.5, bold: true });
+    leader(FX(D.tabs.holesFlat[0]) - 1.5, py0 + (D.tabs.w / 2) * s + 1.5, FX(0) - 4, py0 + D.tabs.w * s + 3, [`2 × Ø${D.tabs.holeD} ON CL`, 'in line with the joist'], { size: 6 });
+    txt('BEND ZONE (dashed)', FX(D.tabs.weld + (D.tabs.s + D.tabs.excess) / 2), py0 + D.tabs.w * s - 1.5, { size: 5.5, color: CL, align: 'center' });
+    viewTitle(TX(40), 272, 'DETAIL D: CEILING TAB (ITEM 6)', '1 : 2.5', `profile and flat blank, 3 thk × ${D.tabs.list.length}; nook to the right`);
     ZX;
   }
   // ----- right column: weld legend, corner joint -----
@@ -667,7 +679,7 @@ function makeFabPdf(jsPDF, D) {
     const steps = black ? [
       ['1', 'CUT & FORM', ['Cut items 1–7 to the parts list.', `Form the 3 ceiling tabs: S-bend ${D.tabs.rise} rise over ${D.tabs.s}, check on a flat.`, 'Deburr all cut ends.'], INK],
       ['2', 'DRILL', ['H1: 6 × Ø39 through both walls of leg 2.', 'H2: Ø9 rivnut holes in both outside faces.', 'H3: Ø12 in base plates.  H4: Ø7 in tabs.', 'Vent holes if the coater asks.'], INK],
-      ['3', 'WELD 1: THE FRAME', ['Legs to base plates; beam on the legs;', 'tabs on the beam’s inside top edge.', 'Full seal welds. Check the top of the U', `is straight and the legs are ${f0(LL.height)} / ${f0(RL.height)} to the top.`], INK],
+      ['3', 'WELD 1: THE FRAME', ['Legs to base plates; beam on the legs;', `tabs ${D.tabs.weld} flat on the beam top.`, 'Full seal welds. Check the top of the U', `is straight and the legs are ${f0(LL.height)} / ${f0(RL.height)} to the top.`], INK],
       ['4', 'MASK', ['Mask a Ø70 BARE RING around every H1 hole,', 'on both faces of leg 2 (12 rings).', 'Plug H2 holes. Leave H3 / H4 open.', 'NO PIPES FITTED YET.'], BLUE],
       ['5', 'POWDER COAT', ['Abrasive blast, stainless-compatible primer,', 'black powder coat (exterior grade).', 'Cure. Remove masking. Rings stay', 'bare stainless.'], ACC],
       ['6', 'WELD 3a: INSIDE FERRULES', ['On the bench, butt-weld one ferrule to each', `tube (item 7, ${f1(D.pass.tube)} long).`, 'Back-purge, low heat.'], BLUE],
@@ -735,6 +747,58 @@ function makeFabPdf(jsPDF, D) {
       fill([253, 236, 226]); pen(MED, ACC); doc.rect(x0, y0, 128, 32, 'FD');
       txt('DO NOT', x0 + 3, y0 + 6, { size: 9, bold: true, color: ACC });
       ['× weld anything to the frame after coating except the pipes, inside the rings', '× let powder or primer into the tube bores or onto the ferrule faces', '× grind the coat to make room for a weld', '× put pickling gel on the powder coat'].forEach((l, i) => txt(l, x0 + 3, y0 + 12 + i * 4.6, { size: 6.5 }));
+    }
+  }
+
+  // =====================================================================================
+  // SHEET 5: 3D VIEWS (rendered from the model)
+  // =====================================================================================
+  if (D.views && D.views.length) {
+    sheet(5);
+    const NAMES = { 1: 'LEFT LEG', 2: 'RIGHT LEG', 3: 'TOP BEAM', 4: 'BASE PLATE L', 5: 'BASE PLATE R', 6: 'CEILING TAB', 7: 'PASS-THROUGH TUBE', 8: 'TC FERRULE', 10: 'M10 ANCHOR', 11: 'BATTEN SCREW' };
+    const place = (v, x, y, w, h) => {
+      const ih = Math.min(h, (w * v.h) / v.w), iw = (ih * v.w) / v.h;
+      const ix = x + (w - iw) / 2, iy = y;
+      doc.addImage(v.img, 'JPEG', ix, iy, iw, ih);
+      pen(THIN, CL); doc.rect(ix, iy, iw, ih, 'S');
+      // view letter tag
+      fill([28, 28, 30]); doc.rect(ix, iy, 7, 7, 'F'); txt(v.key, ix + 3.5, iy + 5.1, { size: 9, bold: true, align: 'center', color: [255, 255, 255] });
+      const cx = ix + iw / 2, cy = iy + ih / 2;
+      for (const m of v.marks) {
+        const px = ix + m.u * iw, py = iy + m.v * ih;
+        let dx = px - cx, dy = py - cy; const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+        const off = 10;
+        let bx = Math.min(ix + iw - 5, Math.max(ix + 5, px + dx * off + 4 * Math.sign(dx || 1)));
+        let by = Math.min(iy + ih - 5, Math.max(iy + 9, py + dy * off));
+        if (m.n === 'R') {
+          pen(THIN, ACC); ln(px, py, bx, by); dot(px, py, 0.5, ACC);
+          fill([255, 255, 255]); pen(MED, ACC); doc.circle(bx, by, 3.2, 'FD');
+          txt('R', bx, by + 1.15, { align: 'center', size: 7.5, bold: true, color: ACC }); pen(THIN, INK);
+        } else balloon(m.n, bx, by, px, py);
+      }
+      txt(`VIEW ${v.key}: ${v.title}`, ix + iw / 2, iy + ih + 5.5, { size: 8, bold: true, align: 'center' });
+      txt('NOT TO SCALE', ix + iw / 2, iy + ih + 9, { size: 5.8, align: 'center', color: CL });
+      return ih;
+    };
+    const V = Object.fromEntries(D.views.map((v) => [v.key, v]));
+    if (V.A) place(V.A, 14, 16, 100, 178);
+    if (V.B) place(V.B, 118, 16, 100, 178);
+    const zs = ['C', 'D', 'E', 'F'].filter((k) => V[k]);
+    zs.forEach((k, i) => place(V[k], 224 + (i % 2) * 94, 16 + Math.floor(i / 2) * 98, 90, 82));
+    // legend and notes
+    {
+      const x0 = 14, y0 = 214;
+      txt('BALLOONS = PARTS LIST ITEMS (SHEET 1)', x0, y0, { size: 7.5, bold: true });
+      const keys = [1, 2, 3, 4, 5, 6, 7, 8, 10, 11];
+      keys.forEach((n, i) => {
+        const x = x0 + (i % 5) * 41, y = y0 + 7 + Math.floor(i / 5) * 8;
+        pen(MED); fill([255, 255, 255]); doc.circle(x + 2.6, y - 1, 2.6, 'FD');
+        txt(n, x + 2.6, y - 0.05, { size: 6.5, bold: true, align: 'center' });
+        txt(NAMES[n], x + 6.5, y, { size: 6.2 });
+      });
+      { const x = x0 + 5 * 41, y = y0 + 7; pen(MED, ACC); fill([255, 255, 255]); doc.circle(x + 2.6, y - 1, 2.6, 'FD'); txt('R', x + 2.6, y - 0.05, { size: 6.5, bold: true, align: 'center', color: ACC }); txt('Ø70 BARE RING (masked for coating)', x + 6.5, y, { size: 6.2, color: ACC }); pen(THIN, INK); }
+      txt('Rendered from the planner model in the finish chosen there. For orientation only: build to the dimensions on sheets 1 to 3,', x0, y0 + 27, { size: 6.2, color: CL });
+      txt('in the order on sheet 4. Side frames, headbox and shutter are not shown (by the shutter company).', x0, y0 + 30.5, { size: 6.2, color: CL });
     }
   }
   return doc;

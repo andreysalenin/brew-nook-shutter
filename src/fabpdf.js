@@ -54,6 +54,7 @@ function makeFabPdf(jsPDF, D) {
     if (w >= 7) { ln(lo, yLine, hi, yLine); arrowHead(lo, yLine, -1, 0, o.c); arrowHead(hi, yLine, 1, 0, o.c); }
     else { ln(lo - 5, yLine, hi + 5, yLine); arrowHead(lo, yLine, 1, 0, o.c); arrowHead(hi, yLine, -1, 0, o.c); }
     const tx = o.tx != null ? o.tx : (w >= Math.max(7, String(label).length * 1.35) ? (lo + hi) / 2 : hi + 2 + String(label).length * 0.7);
+    if (o.bg) { const tw = doc.getTextWidth ? (doc.setFontSize(o.size || 7), doc.getTextWidth(String(label))) : 10; fill([255, 255, 255]); doc.rect(tx - tw / 2 - 0.8, yLine - 0.9 - (o.size || 7) * 0.3, tw + 1.6, (o.size || 7) * 0.36, 'F'); }
     txt(label, tx, yLine - 0.9, { align: 'center', size: o.size || 7, color: o.c || INK, bold: o.bold });
   }
   function dimV(ya, yb, xLine, xa, xb, label, o = {}) {
@@ -404,7 +405,7 @@ function makeFabPdf(jsPDF, D) {
     // tube length between ferrules
     const yb = D.pass.ys[0];
     const ym1 = (D.pass.ys[0] + D.pass.ys[1]) / 2, ym2 = (D.pass.ys[1] + D.pass.ys[2]) / 2;
-    dimH(ZX(50 + D.pass.inside - fl), ZX(-D.pass.outside + fl), B.Y(ym1), B.Y(yb - D.pass.od / 2), B.Y(yb - D.pass.od / 2), `${f1(D.pass.tube)} TUBE (ITEM 7)`, { size: 6.5, tx: ZX(25) });
+    dimH(ZX(50 + D.pass.inside - fl), ZX(-D.pass.outside + fl), B.Y(ym1), B.Y(yb - D.pass.od / 2), B.Y(yb - D.pass.od / 2), `${f1(D.pass.tube)} TUBE (ITEM 7)`, { size: 6.5, tx: ZX(25), bg: true });
     dimH(ZX(50 + D.pass.inside), ZX(50 + D.pass.inside - fl), B.Y(ym2), null, null, '21.5 FERRULE', { size: 6, tx: ZX(50 + D.pass.inside) - 9 });
     dimH(ZX(50), ZX(50 + D.plates.anchorZ), B.Y(0) + 6, B.Y(0), B.Y(0), f1(D.plates.anchorZ), { size: 6.5 });
     dimH(ZX(110), ZX(50), B.Y(0) + 12, B.Y(0), B.Y(0), '60', { size: 6.5 });
@@ -688,7 +689,7 @@ function makeFabPdf(jsPDF, D) {
       ['4', 'MASK', ['Mask a Ø70 BARE RING around every H1 hole,', 'on both faces of leg 2 (12 rings).', 'Plug H2 holes. Leave H3 / H4 open.', 'NO PIPES FITTED YET.'], BLUE],
       ['5', 'POWDER COAT', ['Abrasive blast, stainless-compatible primer,', 'black powder coat (exterior grade).', 'Cure. Remove masking. Rings stay', 'bare stainless.'], ACC],
       ['6', 'WELD 3a: INSIDE FERRULES', ['On the bench, butt-weld one ferrule to each', `tube (item 7, ${f1(D.pass.tube)} long).`, 'Back-purge, low heat.'], BLUE],
-      ['7', 'WELD 2: PIPES IN', ['Push each tube in from the INSIDE until the', `flange face is ${f1(D.pass.inside)} proud of the inside face.`, 'Fillet to BOTH walls inside the bare rings.', 'Low amps, stitch around; keep heat off the coat.'], BLUE],
+      ['7', 'WELD 2: PIPES IN', ['Push each tube in from the INSIDE until it', `stands ${f1(D.pass.tubeProud)} proud of each face (flange ${f1(D.pass.inside)} in).`, 'Fillet to BOTH walls inside the bare rings.', 'Low amps, stitch around; keep heat off the coat.'], BLUE],
       ['8', 'WELD 3b: OUTSIDE FERRULES', ['Butt-weld the outside ferrules so the flange', `faces are ${f1(D.pass.outside)} proud outside: ${f1(D.pass.total)} face to face.`, 'Faces square to the tube within 0.5°.'], BLUE],
       ['9', 'PICKLE & PASSIVATE', ['Pickling gel on the pipe welds and rings only;', 'shield the coating. Rinse well.', 'Bores clean and bright.'], INK],
       ['10', 'FIT & CHECK', [`Fit ${D.rivnuts.L.ys.length + D.rivnuts.R.ys.length} × M6 316 rivnuts (H2).`, 'Check against the HOLD POINTS below.', 'Wrap the ferrule faces for delivery.'], INK],

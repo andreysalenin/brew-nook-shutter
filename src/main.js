@@ -1907,7 +1907,7 @@ function shutterLayout() {
     const by1 = H - POST_C.rise - POST_C.tabT;
     L.uBeam = { x0: lx0, x1: W, y0: by1 - POST_C.beamH, y1: by1, z0: zF - pd, z1: zF };
     L.postL.y1 = L.uBeam.y0;
-    L.dumpJamb = { y1: L.uBeam.y0, x0: rx0, x1: W, z0: zF - pd, z1: zF, xc: W - (POST_C.right - ov) / 2, outLen: fd + 0.015, rhs: true, yb: floorY(zF, W) };
+    L.dumpJamb = { y1: L.uBeam.y0, x0: rx0, x1: W, z0: zF - pd, z1: zF, xc: W - (POST_C.right - ov) / 2, inLen: (PASS_TUBE - pd) / 2 + FERRULE_L, outLen: (PASS_TUBE - pd) / 2 + FERRULE_L, rhs: true, yb: floorY(zF, W) };
     L.curtainTop = H;
   } else {
     // a free-standing left post sits wedged against the white wall step, which fixes the shutter line
@@ -2474,7 +2474,7 @@ function buildDump() {
   tip(grp, 'Dump hose', 'Blue 1.5" tri-clamp firm hose lying on the slab: under the 1000 kg rack just inside its back legs, then swinging back to the brick and clamped to the pass-through in the dump jamb');
   const yR = (z) => floorY(z) + DUMP_R; // lying on the slab
   // line under the blue rack, just inside its back legs; without that rack, along the brick
-  const zIn = b.z0 - 0.025 - TC.sizes['1.5'].gap; // hose ferrule face, one gasket off the pass-through
+  const zIn = b.z0 - (b.inLen ?? 0.025) - TC.sizes['1.5'].gap; // hose ferrule face, one gasket off the pass-through
   const front = rackInfo.green ? rackInfo.green.frame.max.z : 0.55;
   const blue = rackInfo.blue && rackInfo.blue.frame.max.x > W - 0.25 ? rackInfo.blue : null;
   let xr = xc, zA = clamp(front + 0.42, 0.7, zIn - 0.4), zB = zA;
@@ -2560,6 +2560,7 @@ function buildDump() {
   grp.add(out);
   G.dump.add(grp);
 }
+const PASS_TUBE = 0.1, FERRULE_L = 0.0215;     // U frame: 100 mm tube centred through the 50 deep leg, a 21.5 mm ferrule on each end
 const PASS_PITCH = 0.08, PASS_SPARE = 2;       // spare pass-throughs above the dump line, 80 mm centres
 const PASS_LIFT = 0.08;                        // lowest pass-through centre 80 mm off the slab, so with 80 mm centres the
                                                // 120 mm rivnut sits midway between the first two
@@ -2712,8 +2713,16 @@ function buildDumpJamb(L, grp) {
   const pc = (z) => V(j.xc, j.pt, z);
   for (let i = 0; i <= PASS_SPARE; i++) {
     const p = (z) => pc(z).add(V(0, i * PASS_PITCH, 0));
-    ferrule(post, p(j.z0), V(0, 0, -1));
-    ferrule(post, p(j.z1), V(0, 0, 1), j.outLen);
+    if (j.rhs) {
+      // the tube itself, 25 proud of each face, with the ferrules butt-welded on its ends
+      const tp = (PASS_TUBE - (j.z1 - j.z0)) / 2;
+      post.add(cylBetween(0.01905, p(j.z0 - tp), p(j.z1 + tp), MAT.ss, 24));
+      ferrule(post, p(j.z0 - tp), V(0, 0, -1), FERRULE_L);
+      ferrule(post, p(j.z1 + tp), V(0, 0, 1), FERRULE_L);
+    } else {
+      ferrule(post, p(j.z0), V(0, 0, -1));
+      ferrule(post, p(j.z1), V(0, 0, 1), j.outLen);
+    }
     if (j.rhs && fin === MAT.coatBlack) {
       // Ø70 bare-stainless rings, masked during powder coating, on both faces around each tube
       for (const [z, ry] of [[j.z0 - 0.0004, PI], [j.z1 + 0.0004, 0]]) {
@@ -3093,7 +3102,7 @@ function updateShutterReadout() {
       h('p', { class: 'blurb' }, h('b', {}, 'The one custom part: the dump jamb. '), j.brick ? 'A stainless fabricator makes it and you fit it before the shutter company comes. To them it is just a flat face to screw the right guide to. It stands on the slab and is held to the brick by two cleats.' : 'A stainless fabricator makes it and you fit it before the shutter company comes. To them it is just a steel post to fix the right guide and headbox to. It is fixed the same way as the left post: slab and ceiling only.'),
       h('ul', { class: 'spec' },
         h('li', {}, h('b', {}, 'Post '), `${j.rhs ? '100 × 50 × 3 mm 316 stainless RHS (100 across the opening)' : '75 × 75 × 3 mm 316 stainless SHS (square tube)'}, ${Math.round((j.y1 - j.y0) * 1000)} mm long (base plate to ${L.mount === 'portal' ? 'header' : 'ceiling'}), welded to the base plate, capped at the top`),
-        h('li', {}, h('b', {}, 'Pass-throughs '), `3 × 38.1 mm 316 tube welded through at ${Math.round(PASS_PITCH * 1000)} mm centres, ${[0, 1, 2].map((i) => Math.round((j.pt - j.yb + i * PASS_PITCH) * 1000)).join(' / ')} mm above the slab, ${Math.round((L.W - j.xc) * 1000)} mm off the brick${j.rhs ? ` (clear of the 30 mm frame overlap). Each tube ${Math.round((0.025 + (j.z1 - j.z0) + j.outLen) * 1000)} mm flange face to flange face: 25 mm proud inside, ${Math.round((j.z1 - j.z0) * 1000)} through the post, ${Math.round(j.outLen * 1000)} proud outside so the clamps sit clear in front of the ${Math.round(L.frameD * 1000)} mm deep side frame` : ''}, 1.5" tri-clamp ferrule each end`),
+        h('li', {}, h('b', {}, 'Pass-throughs '), `3 × 38.1 mm 316 tube welded through at ${Math.round(PASS_PITCH * 1000)} mm centres, ${[0, 1, 2].map((i) => Math.round((j.pt - j.yb + i * PASS_PITCH) * 1000)).join(' / ')} mm above the slab, ${Math.round((L.W - j.xc) * 1000)} mm off the brick${j.rhs ? ` (clear of the 30 mm frame overlap). Each a ${Math.round(PASS_TUBE * 1000)} mm tube centred through the ${Math.round((j.z1 - j.z0) * 1000)} mm leg (${Math.round((PASS_TUBE - (j.z1 - j.z0)) * 500)} proud each side) with a ${FERRULE_L * 1000} mm ferrule on each end: ${Math.round((j.inLen + (j.z1 - j.z0) + j.outLen) * 1000)} mm flange face to flange face, so the outside clamps sit well clear in front of the ${Math.round(L.frameD * 1000)} mm deep side frame` : ''}, 1.5" tri-clamp ferrule each end`),
         h('li', {}, h('b', {}, 'Base plates '), j.rhs ? `8 mm 316 under each leg, with a 60 mm tab on the inside only (the frame stands outside). Right: 100 × 110 mm. Left: runs from the weatherboard to the leg's far side (${Math.round((L.postL.x1 - 0.002) * 1000)} mm), filling the corner behind the white wall step. 2 × M10 316 anchors each, all four on one line 34 mm in from the legs' inside faces; seal under them` : '8 mm 316, 105 × 195 mm, with a tab inside and outside the shutter line: 4 × M10 316 anchors into the slab, seal under it'),
         L.uBeam ? h('li', {}, h('b', {}, 'Frame '), `Inverted U, ${Math.round((L.uBeam.x1 - L.uBeam.x0) * 1000)} mm wide: this leg ${Math.round((L.uBeam.y1 - j.yb) * 1000)} mm floor to top of the U, the 50 × 50 × 3 SHS left leg ${Math.round((L.uBeam.y1 - L.postL.yb) * 1000)} mm (the slab is higher on that side), and a 50 × 25 × 3 RHS top beam butting up under the weatherboard edge, all 316, welded. Three 45 × 150 × 3 mm tabs welded on the beam's inside top edge at ${(cfg.nook.joists || []).join(' / ')} mm from the brick, S-bent to rise 22 mm over the first 65 mm, then flat; 2 × 14g × 100 316 screws each, in a line along the joist, 40 mm apart. ${cfg.shutter.uFinish === 'black' ? 'Powder-coated black after welding, with the ferrules, their bores and the tube stubs masked so they stay bare.' : 'Bare 316.'}`) : null,
         L.uBeam ? null : j.brick ? h('li', {}, h('b', {}, 'Brick cleats '), '2 × 60 mm 316 angle cleats welded to the inside face, about 900 mm up and 450 mm below the ceiling, each with 2 × M8 316 masonry anchors 70 mm into the brick') : L.mount === 'portal' ? null : h('li', {}, h('b', {}, 'Top '), 'One 60 mm cleat on the inside face, 2 × 14g 316 screws up into the ceiling framing'),
@@ -3141,7 +3150,8 @@ function fabData() {
   const leftHoles = [mm1(0.002 + ANCHOR_EDGE - x0), mm1(p.x1 - ANCHOR_EDGE - x0)];
   const rightHoles = [mm1(j.x0 + ANCHOR_EDGE - x0), mm1(j.x1 - ANCHOR_EDGE - x0)];
   const gf = L.guideFix || {};
-  const tube = mm1(0.025 + (j.z1 - j.z0) + j.outLen) - 2 * 21.5;
+  const inLen = j.inLen ?? 0.025;
+  const tube = mm1(inLen + (j.z1 - j.z0) + j.outLen) - 2 * 21.5;
   return {
     date: new Date().toISOString().slice(0, 10),
     finish: cfg.shutter.uFinish === 'black' ? 'black' : 'ss',
@@ -3157,7 +3167,7 @@ function fabData() {
     },
     pass: {
       x: mm1(j.xc - x0), fromBrick: mm1(W - j.xc), ys: [0, 1, 2].map((i) => mm1(j.pt - yR + i * PASS_PITCH)),
-      od: 38.1, wall: 1.65, hole: 39, inside: 25, outside: mm1(j.outLen), total: mm1(0.025 + (j.z1 - j.z0) + j.outLen), tube: Math.round(tube * 10) / 10,
+      od: 38.1, wall: 1.65, hole: 39, inside: mm1(inLen), outside: mm1(j.outLen), tubeProud: mm1((tube / 1000 - (j.z1 - j.z0)) / 2), total: mm1(inLen + (j.z1 - j.z0) + j.outLen), tube: Math.round(tube * 10) / 10,
       ferrule: 21.5, flangeOD: 50.5, clampOD: sz.clampOD * 1000, clampW: sz.clampW * 1000, frameD: mm1(L.frameD), overlap: P.overlap * 1000, ring: 70,
     },
     plates: {

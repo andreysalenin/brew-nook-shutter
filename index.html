@@ -4903,7 +4903,7 @@ function defaults() {
     door: { show: true, fromBack: 520, width: 820, window: 600, windowH: 1020, hinge: 'back', opens: 'laundry' },
     drain: { show: true, offset: 185, width: 110 },
     dump: { show: true, connect: 'tankB', outside: 'spout' },
-    shutter: { color: '#E4E2D5', boxColor: '#2B2C2C', open: 50, slat: 'cw55', setback: 90, motor: 'right', drive: 'spring', uFinish: 'black', inside: false, mount: 'face', frame: 'alu', partyFix: false },
+    shutter: { color: '#E4E2D5', boxColor: '#2B2C2C', railColor: '#2B2C2C', open: 50, slat: 'cw55', setback: 90, motor: 'right', drive: 'spring', uFinish: 'black', inside: false, mount: 'face', frame: 'alu', partyFix: false },
     racks: {
       green: {
         x: 10, z: 5,
@@ -5511,6 +5511,7 @@ function makeMaterials() {
   MAT.dialFace = new THREE.MeshBasicMaterial({ map: TEX.dial });
   MAT.arrow = new THREE.MeshBasicMaterial({ color: 0xe0601c, transparent: true, opacity: 0.88, polygonOffset: true, polygonOffsetFactor: -4, depthWrite: false });
   MAT.shutter = S({ color: 0xe4e2d5, roughness: 0.48, metalness: 0.15 });
+  MAT.rail = S({ color: 0x2b2c2c, roughness: 0.48, metalness: 0.15 });
   MAT.shutterGhost = S({ color: 0xe4e2d5, roughness: 0.48, metalness: 0.15, transparent: true, opacity: 0.18, depthWrite: false });
   MAT.headbox = S({ color: 0x2b2c2c, roughness: 0.5, metalness: 0.15 });
   MAT.headboxGhost = S({ color: 0x2b2c2c, roughness: 0.5, metalness: 0.15, transparent: true, opacity: 0.2, depthWrite: false });
@@ -5873,6 +5874,17 @@ function buildRoom() {
     const trim = boxAt(0, H - CEIL.trim, zW - CEIL.wb - CEIL.trim, W, H, zW - CEIL.wb, MAT.trim);
     tip(trim, 'Ceiling trim', '18 × 18 mm trim along the plasterboard edge at the opening');
     G.room.add(trim);
+    // the same 18 × 18 trim runs right round the ceiling: back wall, brick wall and the weatherboard wall
+    const tz1 = zW - CEIL.wb - CEIL.trim, T = CEIL.trim;
+    const runs = [
+      ['back wall', boxAt(0, H - T, 0, W, H, T, MAT.trim)],
+      ['brick wall', boxAt(W - T, H - T, T, W, H, tz1, MAT.trim)],
+    ];
+    if (!v.hideLeft) runs.push(['weatherboard wall', boxAt(0, H - T, T, T, H, tz1, MAT.trim)]);
+    for (const [where, t] of runs) {
+      tip(t, 'Ceiling trim', `18 × 18 mm trim where the plasterboard meets the ${where}`);
+      G.room.add(t);
+    }
     const lip = ownMesh(boxAt(whiteM().x1, H - CEIL.trim - CEIL.wbDrop, zW - CEIL.wb, W, H + 0.013, zW, texturedMat(MAT.weather, W / 0.81, 0.05)));
     tip(lip, 'Weatherboard edge', `9 mm weatherboard on the face over the opening, its bottom edge ${Math.round(CEIL.wbDrop * 1000)} mm below the trim (${Math.round((CEIL.trim + CEIL.wbDrop) * 1000)} mm below the plasterboard). The top of the U frame butts up under it.`);
     G.room.add(lip);
@@ -6775,7 +6787,7 @@ function headboxGeo(B, len, chamfer) {
 }
 
 function frameMat() {
-  return cfg.shutter.frame === 'galv' ? MAT.galv : MAT.shutter;
+  return cfg.shutter.frame === 'galv' ? MAT.galv : MAT.rail;
 }
 
 function buildShutter() {
@@ -6787,6 +6799,7 @@ function buildShutter() {
   MAT.roll.color.set(cfg.shutter.color).multiplyScalar(0.92);
   MAT.headbox.color.set(cfg.shutter.boxColor || cfg.shutter.color);
   MAT.headboxGhost.color.set(cfg.shutter.boxColor || cfg.shutter.color);
+  MAT.rail.color.set(cfg.shutter.railColor || cfg.shutter.color);
   const inside = cfg.shutter.inside;
   const grp = new THREE.Group();
   grp.userData.role = 'shutter';
@@ -6833,27 +6846,27 @@ function buildShutter() {
     if (gd.type === 'reveal') {
       const back = gd.side === 'L' ? [gd.x0, gd.x0 + 0.004] : [gd.x1 - 0.004, gd.x1];
       const ch = gd.side === 'L' ? [gd.x0 + 0.004, gd.x1] : [gd.x0, gd.x1 - 0.004];
-      gg.add(boxAt(back[0], y0, gd.z0, back[1], y1, gd.z1, MAT.shutter));
-      gg.add(boxAt(ch[0], y0, gd.z0, ch[1], y1, L.zs - slot / 2, MAT.shutter));
-      gg.add(boxAt(ch[0], y0, L.zs + slot / 2, ch[1], y1, gd.z1, MAT.shutter));
+      gg.add(boxAt(back[0], y0, gd.z0, back[1], y1, gd.z1, MAT.rail));
+      gg.add(boxAt(ch[0], y0, gd.z0, ch[1], y1, L.zs - slot / 2, MAT.rail));
+      gg.add(boxAt(ch[0], y0, L.zs + slot / 2, ch[1], y1, gd.z1, MAT.rail));
       gg.add(boxAt(ch[0], y0, L.zs - slot / 2, ch[1], y1, L.zs - slot / 2 + 0.003, MAT.black));
       gg.add(boxAt(ch[0], y0, L.zs + slot / 2 - 0.003, ch[1], y1, L.zs + slot / 2, MAT.black));
     } else if (gd.type === 'faceframe') {
       // flat side frame: back flange on the post face, front cover, outer wall, slotted inner wall facing the opening
       const inner = gd.side === 'L' ? gd.x1 : gd.x0, outer = gd.side === 'L' ? gd.x0 : gd.x1, sgn = gd.side === 'L' ? 1 : -1;
-      gg.add(boxAt(gd.x0, y0, gd.z0, gd.x1, y1, gd.z0 + 0.003, MAT.shutter));
-      gg.add(boxAt(gd.x0, y0, gd.z1 - 0.003, gd.x1, y1, gd.z1, MAT.shutter));
-      gg.add(boxAt(Math.min(outer, outer + sgn * 0.003), y0, gd.z0, Math.max(outer, outer + sgn * 0.003), y1, gd.z1, MAT.shutter));
+      gg.add(boxAt(gd.x0, y0, gd.z0, gd.x1, y1, gd.z0 + 0.003, MAT.rail));
+      gg.add(boxAt(gd.x0, y0, gd.z1 - 0.003, gd.x1, y1, gd.z1, MAT.rail));
+      gg.add(boxAt(Math.min(outer, outer + sgn * 0.003), y0, gd.z0, Math.max(outer, outer + sgn * 0.003), y1, gd.z1, MAT.rail));
       const i0 = Math.min(inner, inner - sgn * 0.003), i1 = Math.max(inner, inner - sgn * 0.003);
-      gg.add(boxAt(i0, y0, gd.z0, i1, y1, L.zs - slot / 2, MAT.shutter));
-      gg.add(boxAt(i0, y0, L.zs + slot / 2, i1, y1, gd.z1, MAT.shutter));
+      gg.add(boxAt(i0, y0, gd.z0, i1, y1, L.zs - slot / 2, MAT.rail));
+      gg.add(boxAt(i0, y0, L.zs + slot / 2, i1, y1, gd.z1, MAT.rail));
       const c0 = Math.min(inner - sgn * 0.003, inner - sgn * 0.022), c1 = Math.max(inner - sgn * 0.003, inner - sgn * 0.022);
       gg.add(boxAt(c0, y0, L.zs - slot / 2 - 0.003, c1, y1, L.zs - slot / 2, MAT.black));
       gg.add(boxAt(c0, y0, L.zs + slot / 2, c1, y1, L.zs + slot / 2 + 0.003, MAT.black));
     } else {
-      gg.add(boxAt(gd.x0, y0, gd.z0, gd.x1, y1, gd.z0 + 0.004, MAT.shutter));
-      gg.add(boxAt(gd.x0, y0, gd.z0, gd.x0 + 0.004, y1, gd.z1, MAT.shutter));
-      gg.add(boxAt(gd.x0 + 0.01, y0, gd.z1 - 0.004, gd.x1, y1, gd.z1, MAT.shutter));
+      gg.add(boxAt(gd.x0, y0, gd.z0, gd.x1, y1, gd.z0 + 0.004, MAT.rail));
+      gg.add(boxAt(gd.x0, y0, gd.z0, gd.x0 + 0.004, y1, gd.z1, MAT.rail));
+      gg.add(boxAt(gd.x0 + 0.01, y0, gd.z1 - 0.004, gd.x1, y1, gd.z1, MAT.rail));
     }
     tip(gg, gd.type === 'faceframe' ? 'Side frame' : 'Side guide', gd.type === 'faceframe' ? `Face-fit aluminium side frame, ${Math.round((gd.x1 - gd.x0) * 1000)} × ${Math.round((gd.z1 - gd.z0) * 1000)} mm, pile-lined; its flange overlaps the post by ${Math.round(POST_C.overlap * 1000)} mm` : `Extruded aluminium, ${Math.round(L.gp * 1000)} × ${Math.round(L.gd * 1000)} mm, pile-lined`);
     grp.add(gg);
@@ -6911,7 +6924,7 @@ function buildShutter() {
       const b = new THREE.Group();
       b.userData.role = 'fix';
       if (gd.type === 'faceframe') {
-        b.add(cylBetween(0.0065, V(gd.fixX, y, gd.z1), V(gd.fixX, y, gd.z1 + 0.004), MAT.shutter, 16)); // cover cap
+        b.add(cylBetween(0.0065, V(gd.fixX, y, gd.z1), V(gd.fixX, y, gd.z1 + 0.004), MAT.rail, 16)); // cover cap
         b.add(cylBetween(0.003, V(gd.fixX, y, gd.z1), V(gd.fixX, y, gd.z0 - 0.012), MAT.ss, 8));
       } else {
         b.add(cylBetween(0.0055, V(back + inn * 0.004, y, L.zs), V(back + inn * 0.0075, y, L.zs), MAT.ss, 12));
@@ -7003,7 +7016,7 @@ function buildMountHardware(L, grp) {
     const y0 = L.floorS + 0.03, y1 = L.box.y0;
     const jamb = new THREE.Group();
     jamb.userData.role = 'struct';
-    jamb.add(boxAt(j.x0, y0, L.zs - 0.025, j.x1, y1, L.zs + 0.025, MAT.shutter));
+    jamb.add(boxAt(j.x0, y0, L.zs - 0.025, j.x1, y1, L.zs + 0.025, MAT.rail));
     jamb.add(boxAt(j.x0 + 0.003, y0 - 0.003, L.zs - 0.022, j.x1 - 0.003, y0, L.zs + 0.022, MAT.black));
     for (const y of [0.3, 0.95, 1.6, y1 - L.floorS - 0.25]) {
       const yy = L.floorS + y;
@@ -8856,8 +8869,26 @@ function buildPanel() {
   bsw.append(boxIn, boxName);
   syncers.push(syncBox);
   syncBox();
+  const rsw = h('div', { class: 'swatches', role: 'group', 'aria-label': 'Side rail colour' });
+  const railIn = h('input', { type: 'color', id: 'shRailColor', 'aria-label': 'Custom side rail colour' });
+  const railName = h('span', { class: 'swatch-name' });
+  const syncRail = () => {
+    const c = (cfg.shutter.railColor || cfg.shutter.color).toLowerCase();
+    railIn.value = c;
+    const hit = SWATCHES.find(([x]) => x.toLowerCase() === c);
+    railName.textContent = hit ? hit[1] : c.toUpperCase();
+    rsw.querySelectorAll('.swatch').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.c.toLowerCase() === c)));
+  };
+  for (const [c, n] of SWATCHES) {
+    rsw.append(h('button', { type: 'button', class: 'swatch', style: `background:${c}`, 'data-c': c, title: n, 'aria-label': n, onclick: () => { cfg.shutter.railColor = c; applyColor(); syncRail(); } }));
+  }
+  railIn.addEventListener('input', () => { cfg.shutter.railColor = railIn.value; applyColor(); syncRail(); });
+  rsw.append(railIn, railName);
+  syncers.push(syncRail);
+  syncRail();
   root.append(section('shutter', 'Roller shutter', 'aluminium', true, [
-    h('div', { class: 'row2' }, h('label', { for: 'shColor' }, 'Slats & frames'), sw),
+    h('div', { class: 'row2' }, h('label', { for: 'shColor' }, 'Slats & bottom bar'), sw),
+    h('div', { class: 'row2' }, h('label', { for: 'shRailColor' }, 'Side rails'), rsw),
     h('div', { class: 'row2' }, h('label', { for: 'shBoxColor' }, 'Headbox'), bsw),
     selRow('shSlat', 'Slats', Object.entries(SLATS).map(([k, s]) => [k, s.label]), () => cfg.shutter.slat, (v) => { cfg.shutter.slat = v; schedule('shutter'); }),
     h('div', { id: 'setbackRow' }, numRow('shSetback', 'Line in from opening', { min: 0, max: 400, step: 5, get: () => cfg.shutter.setback, set: (v) => { cfg.shutter.setback = v; schedule('shutter'); } })),
@@ -9073,6 +9104,7 @@ function renderItems() {
 }
 
 function applyColor() {
+  MAT.rail.color.set(cfg.shutter.railColor || cfg.shutter.color);
   MAT.headbox.color.set(cfg.shutter.boxColor || cfg.shutter.color);
   MAT.headboxGhost.color.set(cfg.shutter.boxColor || cfg.shutter.color);
   MAT.shutter.color.set(cfg.shutter.color);

@@ -81,7 +81,7 @@ const deckTopY = (spec, lv) => levelY(spec, lv.slot) + (lv.deck === 'acacia' ? A
 // From the brochures: guide w = across the opening, d = front to back; boxes = [pelmet, max shutter height].
 // Ozroll doesn't list slat thickness, guide size or pelmet heights in its sheet: those are estimates (est).
 const SLATS = {
-  oz40: { label: 'Ozroll Rollashield 40 mm curved (AR400)', short: 'Ozroll 40', pitch: 0.040, t: 0.009, kg: 4.0, guide: { w: 0.053, d: 0.022 }, est: true, maxArea: 8, manual: 'strap winder or spring assist' },
+  oz40: { label: 'Ozroll Rollashield 40 mm curved (AR400)', short: 'Ozroll 40', pitch: 0.040, t: 0.009, kg: 4.0, guide: { w: 0.053, d: 0.022 }, guideDEst: true, boxes: [[0.150, 1.3], [0.165, 1.7], [0.180, 2.135], [0.205, 3.0], [0.230, 3.8]], inclBox: true, maxArea: 8, manual: 'strap, winder or spring assist' },
   cw42: { label: 'CW Products 42 mm double line', short: 'CW 42', pitch: 0.042, t: 0.0085, kg: 3.2, guide: { w: 0.053, d: 0.022 }, boxes: [[0.150, 1.3], [0.165, 1.7], [0.180, 2.2], [0.205, 2.6]], maxArea: 8, manual: 'spring loaded with key lock, or strap/cord winder up to 20 kg' },
   cw55: { label: 'CW Products 55 mm widespan', short: 'CW 55', pitch: 0.055, t: 0.012, kg: 4.0, guide: { w: 0.068, d: 0.025 }, boxes: [[0.180, 1.85], [0.205, 2.4], [0.230, 3.0]], maxArea: 10, manual: 'spring loaded with key lock, or steel cable winder up to 50 kg' },
   cw77: { label: 'CW Products 77 mm widespan', short: 'CW 77', pitch: 0.077, t: 0.0185, kg: 5.0, guide: { w: 0.105, d: 0.037 }, boxes: [[0.250, 2.0], [0.300, 3.0]], inclBox: true, maxArea: 15, manual: null },
@@ -1089,16 +1089,13 @@ function buildRoom() {
       G.room.add(brickBox(-0.23, D + 2.4, -0.12, top));
     }
     if (ctx) {
-      for (const [y0, y1] of [[0.22, 0.86], [0.98, 1.62]]) {
-        const ac = new THREE.Group();
-        const z0 = D + 1.0, z1 = D + 1.85;
-        ac.add(boxAt(W - 0.31, y0, z0, W - 0.01, y1, z1, MAT.ac));
-        const grillR = 0.25;
-        const gr = new THREE.Mesh(new THREE.CircleGeometry(grillR, 40), MAT.fan);
-        gr.position.set(W - 0.312, (y0 + y1) / 2, z0 + 0.32);
-        gr.rotation.y = -PI / 2;
-        ac.add(gr);
-        tip(ac, 'Air-con condenser', 'Context only');
+      // Daikin RZQS125AV1 outdoor unit with its back to the brick, fans blowing out across the yard
+      if (VESSEL_MODULES.daikin) {
+        const ac = vesselBuild('daikin');
+        ac.rotation.y = -PI / 2; // unit front (+z) faces the nook side of the yard (-x)
+        ac.position.set(W - 0.01 - 0.205, -0.004, D + 1.425); // foot rails 10 mm off the brick, on the paving
+        ac.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+        tip(ac, 'Air-con outdoor unit', `${VESSEL_MODULES.daikin.meta.name}. ${VESSEL_MODULES.daikin.meta.dims}. Context only`);
         G.room.add(ac);
       }
     }
@@ -1884,7 +1881,7 @@ function shutterLayout() {
     L.floorR = floorY(L.zs, rx0 + POST_C.right / 2);
     L.crossGap = L.floorS - floorY(L.zs, rx0);   // wedge under the right end of the bottom bar
     L.B = headboxFor(H - L.floorS, slat);
-    L.postL = { x0: lx0, x1: lx1, z0: zF - pd, z1: zF, yb: floorY(zF - pd / 2, (lx0 + lx1) / 2) };
+    L.postL = { x0: lx0, x1: lx1, z0: zF - pd, z1: zF, yb: floorY(zF, lx0) }; // slab at the leg's outer corner, where it was measured
     L.frameD = fd;
     const gl0 = lx1 - ov, gr1 = rx0 + ov;
     L.box = { x0: gl0, x1: gr1, y0: H, y1: H + L.B, z0: zF + 0.002, z1: zF + 0.002 + L.B, chamfer: 'outer' };
@@ -1898,7 +1895,7 @@ function shutterLayout() {
     const by1 = H - POST_C.rise - POST_C.tabT;
     L.uBeam = { x0: lx0, x1: W, y0: by1 - POST_C.beamH, y1: by1, z0: zF - pd, z1: zF };
     L.postL.y1 = L.uBeam.y0;
-    L.dumpJamb = { y1: L.uBeam.y0, x0: rx0, x1: W, z0: zF - pd, z1: zF, xc: W - (POST_C.right - ov) / 2, outLen: fd + 0.015, rhs: true, yb: floorY(zF - pd / 2, rx0 + POST_C.right / 2) };
+    L.dumpJamb = { y1: L.uBeam.y0, x0: rx0, x1: W, z0: zF - pd, z1: zF, xc: W - (POST_C.right - ov) / 2, outLen: fd + 0.015, rhs: true, yb: floorY(zF, W) };
     L.curtainTop = H;
   } else {
     // a free-standing left post sits wedged against the white wall step, which fixes the shutter line
@@ -1979,9 +1976,12 @@ function windSolve(R, h) {
 }
 function makeRoll(L) {
   const t = L.slat.t, p = L.slat.pitch, b = L.box;
+  const cz = b.z0 + L.B / 2;
   const R = {
-    cz: b.z0 + L.B / 2, cy: b.y0 + L.B / 2, qz: L.zs, qy: L.curtainTop,
-    dir: 1, // the curtain winds with its convex (street) face outward, so the concave back sits on the roll
+    cz, cy: b.y0 + L.B / 2, qz: L.zs, qy: L.curtainTop,
+    // the concave face of every slat points toward the side the headbox sits on and cradles the axle on the roll:
+    // headbox outside (C) -> concave to the street, wound clockwise seen from the left; headbox inside -> mirrored
+    dir: cz >= L.zs ? -1 : 1,
     rBase: 0.035, r1: 0.035 + 0.4 * t + 0.0004,
     k: t + 0.0006, // roll-tight: each wrap is one slat thickness plus a hair (curved slats sit snug on the roll)
   };
@@ -1999,14 +1999,15 @@ function makeRoll(L) {
   return R;
 }
 
-function slatGeo(slat, len) {
+function slatGeo(slat, len, f = 1) {
   const p = slat.pitch, t = slat.t;
   return extrudeX((s) => {
-    s.moveTo(-t * 0.4, 0);
-    s.lineTo(t * 0.05, 0);
-    s.quad(t * 0.95, p * 0.5, t * 0.05, p - 0.0016);
-    s.lineTo(-t * 0.4, p - 0.0016);
-    s.quad(-t * 0.25, p * 0.5, -t * 0.4, 0);
+    // f = +1: concave face toward the street (+z), convex toward the nook; f = -1 mirrored. On the roll the concave side cradles the axle
+    s.moveTo(f * t * 0.4, 0);
+    s.lineTo(-f * t * 0.05, 0);
+    s.quad(-f * t * 0.95, p * 0.5, -f * t * 0.05, p - 0.0016);
+    s.lineTo(f * t * 0.4, p - 0.0016);
+    s.quad(f * t * 0.25, p * 0.5, f * t * 0.4, 0);
   }, len, 8);
 }
 
@@ -2108,7 +2109,7 @@ function buildShutter() {
 
   // Curtain: instanced slats + bottom bar
   const len = L.cx1 - L.cx0;
-  const sg = slatGeo(L.slat, len);
+  const sg = slatGeo(L.slat, len, -L.roll.dir);
   curtain.inst = new THREE.InstancedMesh(sg, MAT.shutter, L.roll.N);
   curtain.inst.castShadow = true; curtain.inst.receiveShadow = true;
   tip(curtain.inst, 'Shutter curtain', `${L.slat.label} · ≈ ${L.area.toFixed(1)} m², ${Math.round(L.kg)} kg with bottom bar`);
@@ -2151,9 +2152,9 @@ function buildShutter() {
   for (const gd of L.guides) {
     const back = gd.side === 'L' ? gd.x0 : gd.x1, inn = gd.side === 'L' ? 1 : -1;
     const into = gd.type === 'faceframe' ? (gd.side === 'L' ? 'an M6 rivnut in the 50 × 50 left post' : 'an M6 rivnut in the 100 × 50 right post') : L.dumpJamb && gd.side === 'R' ? 'an M6 rivnut in the dump post' : gd.side === 'L' ? (L.leftPost ? 'an M6 rivnut in the left post' : 'the aluminium jamb') : 'the brick';
-    const ya = L.floorS + 0.1, yb = gTop - 0.1, nSeg = Math.max(1, Math.ceil((yb - ya) / 0.45 - 1e-6));
+    const ya = floorY(L.zs, (gd.x0 + gd.x1) / 2) + 0.1, yb = gTop - 0.1, nSeg = Math.max(1, Math.ceil((yb - ya) / 0.45 - 1e-6));
     const gys = Array.from({ length: nSeg + 1 }, (_, i) => ya + ((yb - ya) * i) / nSeg);
-    L.guideFix = { n: gys.length, pitch: (yb - ya) / nSeg };
+    L.guideFix = { ...(L.guideFix || {}), n: gys.length, pitch: (yb - ya) / nSeg, [gd.side]: gys.slice() };
     for (const y of gys) {
       const b = new THREE.Group();
       b.userData.role = 'fix';
@@ -3023,8 +3024,8 @@ function updateShutterReadout() {
   el.replaceChildren(
     h('li', {}, h('b', {}, 'Curtain '), `${Math.round((L.cx1 - L.cx0) * 1000)} × ${Math.round((L.hangMax + 0.05) * 1000)} · ${L.area.toFixed(1)} m² · about ${Math.round(L.kg)} kg`),
     h('li', {}, h('b', {}, 'Headbox '), `${Math.round(L.B * 1000)} pelmet for a ${Math.round(L.hangMax * 1000)} mm drop${L.slat.boxes ? '' : ' (sized from the roll; Ozroll sheet has no table)'}`),
-    h('li', {}, h('b', {}, 'Slats '), `${L.slat.label}: ${Math.round(L.slat.pitch * 1000)} mm cover, ${L.slat.t * 1000} mm thick${L.slat.est ? ' (est.)' : ''}, ${L.slat.kg} kg/m², foam filled`),
-    h('li', {}, h('b', {}, 'Guides '), `${Math.round(L.slat.guide.w * 1000)} × ${Math.round(L.slat.guide.d * 1000)} mm${L.slat.est ? ' (est.)' : ''}, pile-lined`),
+    h('li', {}, h('b', {}, 'Slats '), `${L.slat.label}: ${Math.round(L.slat.pitch * 1000)} mm cover, ${L.slat.t * 1000} mm thick, ${L.slat.kg} kg/m², foam filled`),
+    h('li', {}, h('b', {}, 'Guides '), `${Math.round(L.slat.guide.w * 1000)} × ${Math.round(L.slat.guide.d * 1000)} mm${L.slat.guideDEst ? ' (depth est.; brochure gives 53 mm only)' : ''}, pile-lined`),
 
     h('li', {}, h('b', {}, 'Floor at the shutter line '), `${Math.round(L.floorS * 1000)} mm above the opening edge`),
   );
@@ -3054,6 +3055,7 @@ function updateShutterReadout() {
       ),
       h('p', { class: 'note' }, L.mount === 'face' ? `Tell the shutter company: face-fit side frames screwed onto two stainless posts (30 mm overlap, M6 rivnuts provided), headbox outside above the opening, held only by its end caps on the side frames (no wall clips); manual ${L.spring ? 'spring-balanced with key lock' : 'drive'}. Clear width ${Math.round(L.clearW * 1000)} mm between the frames.` : `Tell the shutter company: reveal-fit, guides to the floor both sides, standard bottom bar. Clear width ${Math.round(L.clearW * 1000)} mm between ${L.leftPost ? 'a 75 × 75 post on the left, wedged into the corner (slab and ceiling fixed, not fixed to the wall)' : L.mount === 'portal' ? 'the portal frame post on the left' : 'a 50 × 50 × 3 aluminium jamb on the left (anchored through the weatherboard into brick)'} and the 75 × 75 post on the right.`),
     );
+    if (j && L.uBeam) js.append(h('div', { class: 'btns' }, h('button', { type: 'button', class: 'btn', onclick: (e) => exportFabPdf(e.currentTarget) }, 'Download U-frame drawings (A3 PDF)')));
   }
   document.querySelectorAll('#mountSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.m === cfg.shutter.mount)));
   const fr = document.getElementById('frameRow');
@@ -3067,6 +3069,86 @@ function updateShutterReadout() {
   const mr = document.getElementById('motorRow');
   if (mr) mr.hidden = cfg.shutter.drive !== 'motor';
 }
+
+// ---------- U-frame fabrication drawings (A3 PDF) ----------
+/*__FABPDF__*/
+function fabData() {
+  const L = layout;
+  if (!L || L.mount !== 'face' || !L.uBeam || !L.postL || !L.dumpJamb) return null;
+  const { W, H } = dimsM();
+  const j = L.dumpJamb, p = L.postL, b = L.uBeam, P = POST_C;
+  const x0 = p.x0, mm1 = (v) => Math.round(v * 10000) / 10;
+  const yR = j.yb, yL = p.yb;
+  const width = mm1(W - x0);
+  const sz = TC.sizes['1.5'];
+  const plateT = 8;
+  // tab bottom-surface profile (u along the tab from its start, v up from the beam top), same erf S as the model
+  const sig = 0.012, c = P.tabS / 2, ea = erf(-c / sig), ez = erf(c / sig);
+  const S = (u) => (u >= P.tabS ? 1 : (erf((u - c) / sig) - ea) / (ez - ea));
+  const profile = Array.from({ length: 41 }, (_, i) => { const u = (P.tabL * i) / 40; return [mm1(u), mm1(P.rise * S(u))]; });
+  const leftHoles = [mm1(0.002 + 0.016 - x0), mm1(p.x1 - 0.014 - x0)];
+  const rightHoles = [mm1(j.x0 + 0.015 - x0), mm1(j.x1 - 0.014 - x0)];
+  const gf = L.guideFix || {};
+  const tube = mm1(0.025 + (j.z1 - j.z0) + j.outLen) - 2 * 21.5;
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    finish: cfg.shutter.uFinish === 'black' ? 'black' : 'ss',
+    openingW: cfg.nook.width,
+    width, top: mm1(b.y1 - yR), slabStepL: mm1(yL - yR), plateT,
+    beam: { h: P.beamH * 1000, d: P.d * 1000 },
+    ceiling: { plaster: mm1(H - yR) },
+    leftLeg: { w: P.left * 1000, x0: 0, x1: mm1(p.x1 - x0), height: mm1(b.y1 - yL), cut: mm1(b.y0 - yL) - plateT },
+    rightLeg: { w: P.right * 1000, x0: mm1(j.x0 - x0), x1: width, height: mm1(b.y1 - yR), cut: mm1(b.y0 - yR) - plateT },
+    tabs: {
+      list: (cfg.nook.joists || []).map((jm) => ({ fromBrick: jm, x: mm1(W - jm / 1000 - x0) })).filter((t) => t.x - 22.5 >= 0 && t.x + 22.5 <= width),
+      w: P.tabW * 1000, l: P.tabL * 1000, s: P.tabS * 1000, rise: P.rise * 1000, t: P.tabT * 1000, weld: 12, holes: P.screws.map((u) => u * 1000), holeD: 7, profile,
+    },
+    pass: {
+      x: mm1(j.xc - x0), fromBrick: mm1(W - j.xc), ys: [0, 1, 2].map((i) => mm1(j.pt - yR + i * PASS_PITCH)),
+      od: 38.1, wall: 1.65, hole: 39, inside: 25, outside: mm1(j.outLen), total: mm1(0.025 + (j.z1 - j.z0) + j.outLen), tube: Math.round(tube * 10) / 10,
+      ferrule: 21.5, flangeOD: 50.5, clampOD: sz.clampOD * 1000, clampW: sz.clampW * 1000, frameD: mm1(L.frameD), overlap: P.overlap * 1000, ring: 70,
+    },
+    plates: {
+      left: { x0: mm1(0.002 - x0), x1: mm1(p.x1 - x0), notchZ: mm1(p.z1 - (dimsM().D - 0.001)), holes: leftHoles },
+      right: { x0: mm1(j.x0 - x0), x1: width, holes: rightHoles },
+      anchorZ: 34,
+    },
+    rivnuts: {
+      L: { x: mm1(L.guides[0].fixX - x0), ys: (gf.L || []).map((y) => mm1(y - yL)) },
+      R: { x: mm1(L.guides[1].fixX - x0), ys: (gf.R || []).map((y) => mm1(y - yR)) },
+      pitch: mm1(gf.pitch || 0),
+    },
+  };
+}
+let jspdfLoading = null;
+function loadJsPdf() {
+  if (window.jspdf?.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  jspdfLoading ||= new Promise((res, rej) => {
+    const sc = document.createElement('script');
+    sc.src = '__JSPDF_URL__';
+    sc.onload = () => (window.jspdf?.jsPDF ? res(window.jspdf.jsPDF) : rej(new Error('jsPDF did not load')));
+    sc.onerror = () => { jspdfLoading = null; rej(new Error('Could not load the PDF library')); };
+    document.head.append(sc);
+  });
+  return jspdfLoading;
+}
+async function exportFabPdf(btn) {
+  const D = fabData();
+  if (!D) return;
+  const old = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Drawing the sheets…'; }
+  try {
+    const jsPDF = await loadJsPdf();
+    const doc = makeFabPdf(jsPDF, D);
+    doc.save(`U-frame-fabrication-A3-${D.date}.pdf`);
+    if (btn) btn.textContent = 'Saved: U-frame drawings (A3 PDF)';
+  } catch (e) {
+    if (btn) btn.textContent = 'PDF failed: ' + e.message;
+  } finally {
+    if (btn) setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 2500);
+  }
+}
+window.__fab = { fabData, loadJsPdf, makeFabPdf: (...a) => makeFabPdf(...a) };
 
 function buildPanel() {
   syncers.length = 0;

@@ -4385,6 +4385,386 @@ function build(THREE, ctx, opts = {}) {
 
 return { meta: typeof meta !== 'undefined' ? meta : {}, build, defaultOptions: typeof defaultOptions !== 'undefined' ? defaultOptions : {} };
 })();
+VESSEL_MODULES['daikin'] = (() => {
+// Daikin RZQS125AV1 Sky Air outdoor unit (Australian Premium Inverter, 1 phase, 12.5 kW class, R410A).
+// RZQS100/125/140AV1 share the tall two-fan casing: 1430 H x 940 W x 320 D, 108 kg (Daikin Australia
+// ducted brochure). Same 940-wide casing family as the EU RZQG/RZQSG100-140L (1430x940x320, ivory white
+// painted galvanised steel, 2 propeller fans, horizontal discharge, flare 9.52 liquid / 15.9 gas,
+// 4 x M12 anchors at 620 x 345-355 mm).
+// Layout modelled: two stacked fans blowing out of the FRONT (+z) behind black horizontal-bar grilles,
+// fans offset to the left of the front panel; L-shaped heat exchanger on the rear and left side behind
+// an ivory wire guard; solid right side with the L-shaped service cover at the front-right corner
+// (handle recess, nameplate above it) and the stop valves (liquid + gas flare) in the piping recess at
+// the bottom of the front-right corner; two foot rails with anchor slots; flat top plate.
+// Origin bottom centre of the footprint, +y up, +z front, metres.
+const meta = {
+  id: 'daikin',
+  name: 'Daikin RZQS125AV1 Sky Air outdoor unit (12.5 kW, 1 phase)',
+  dims: '1430 H × 940 W × 320 D mm casing (foot rails 410 deep), 108 kg; 2 × Ø~500 propeller fans; flare 9.5 liquid / 15.9 gas',
+  color: 'Daikin ivory white (Munsell 5Y 7.5/1 ≈ #BEBCB1), black fan grilles',
+  ports: {
+    liquid: { pos: [0.335, 0.165, 0.1645], dir: [0, 0, 1], size: '3/8" flare (9.5 mm)' },
+    gas: { pos: [0.405, 0.125, 0.1645], dir: [0, 0, 1], size: '5/8" flare (15.9 mm)' },
+  },
+};
+const defaultOptions = {};
+
+const TAU = Math.PI * 2;
+
+// ---------- dimensions (metres) ----------
+const W = 0.94, D = 0.32, H = 1.43;
+const XL = -W / 2, XR = W / 2, ZF = D / 2, ZB = -D / 2;
+const FOOT_H = 0.045;              // foot rails
+const FOOT_L = 0.41, FOOT_W = 0.075, FOOT_X = 0.31; // rails at the 620 mm anchor pitch
+const SLOT_Z = 0.175;              // anchor slots (345-355 mm pitch)
+const Y0 = FOOT_H;                 // casing bottom
+const TOP_T = 0.016;               // top plate thickness incl. flange
+const FAN_X = -0.055;              // fans offset left
+const FAN_Y = [0.405, 1.065];      // fan centres
+const R_OPEN = 0.282;              // front panel opening
+const R_GR = 0.292;                // grille outer ring
+const R_FAN = 0.248;               // blade tip
+const COIL_T = 0.042;              // heat exchanger thickness
+const SC = { z0: -0.005, y0: 0.235, y1: 0.78, xf: 0.40 }; // service cover (right side + front strip)
+const PR = { x0: 0.285, x1: 0.452, y0: 0.07, y1: 0.225 }; // piping recess window (front, lower right)
+
+// ---------- geometry helpers ----------
+function mergeGeos(THREE, list) {
+  let nv = 0, ni = 0;
+  for (const q of list) { nv += q.attributes.position.count; ni += q.index ? q.index.count : q.attributes.position.count; }
+  const P = new Float32Array(nv * 3), N = new Float32Array(nv * 3), U = new Float32Array(nv * 2);
+  const I = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+  let vo = 0, io = 0;
+  for (const q of list) {
+    if (!q.attributes.normal) q.computeVertexNormals();
+    const at = q.attributes, c = at.position.count;
+    P.set(at.position.array.subarray(0, c * 3), vo * 3);
+    N.set(at.normal.array.subarray(0, c * 3), vo * 3);
+    if (at.uv) U.set(at.uv.array.subarray(0, c * 2), vo * 2);
+    if (q.index) { const ix = q.index.array; for (let k = 0; k < ix.length; k++) I[io++] = ix[k] + vo; }
+    else for (let k = 0; k < c; k++) I[io++] = k + vo;
+    vo += c; q.dispose();
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+  out.setAttribute('uv', new THREE.BufferAttribute(U, 2));
+  out.setIndex(new THREE.BufferAttribute(I, 1));
+  out.computeBoundingBox(); out.computeBoundingSphere();
+  out.userData.shared = true;
+  return out;
+}
+const rrShape = (THREE, w, h, r, cx = 0, cy = 0) => {
+  const s = new THREE.Shape(), x0 = cx - w / 2, y0 = cy - h / 2;
+  r = Math.min(r, w / 2, h / 2);
+  s.moveTo(x0 + r, y0); s.lineTo(x0 + w - r, y0); s.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+  s.lineTo(x0 + w, y0 + h - r); s.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+  s.lineTo(x0 + r, y0 + h); s.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+  s.lineTo(x0, y0 + r); s.quadraticCurveTo(x0, y0, x0 + r, y0);
+  return s;
+};
+
+// ---------- textures ----------
+function drawFins(g, w, h) {
+  g.fillStyle = '#b4bbc0'; g.fillRect(0, 0, w, h);
+  for (let x = 0; x < w; x += 2) { g.fillStyle = (x / 2) % 2 ? '#c8ced2' : '#7f878d'; g.fillRect(x, 0, 1, h); }
+  // copper tube return bends showing through the fins (horizontal rows)
+  g.fillStyle = 'rgba(60,64,70,0.35)';
+  for (let y = 4; y < h; y += 16) g.fillRect(0, y, w, 3);
+}
+function drawLogo(g, w, h) {
+  g.clearRect(0, 0, w, h);
+  const blue = '#0b78c8';
+  // the Daikin mark: a blue delta (triangle) with a lighter right flank
+  const th = h * 0.82, tw = th * 1.12, x0 = h * 0.06, yb = h * 0.91;
+  g.fillStyle = blue; g.beginPath(); g.moveTo(x0, yb); g.lineTo(x0 + tw, yb); g.lineTo(x0 + tw * 0.5, yb - th); g.closePath(); g.fill();
+  g.fillStyle = '#5ec8f2'; g.beginPath(); g.moveTo(x0 + tw * 0.56, yb - th * 0.88); g.lineTo(x0 + tw, yb); g.lineTo(x0 + tw * 0.66, yb); g.closePath(); g.fill();
+  g.fillStyle = blue; g.textBaseline = 'alphabetic'; g.textAlign = 'left';
+  g.font = `italic 900 ${Math.round(h * 0.92)}px "Arial Black", Arial, Helvetica, sans-serif`;
+  g.save(); g.translate(x0 + tw + h * 0.18, yb); g.scale(1.06, 1); g.fillText('DAIKIN', 0, 0); g.restore();
+}
+function drawPlate(g, w, h) {
+  g.fillStyle = '#d4d6d8'; g.fillRect(0, 0, w, h);
+  g.strokeStyle = '#6b6e72'; g.lineWidth = 3; g.strokeRect(4, 4, w - 8, h - 8);
+  g.fillStyle = '#0a83c9'; g.font = `italic 900 ${Math.round(h * 0.1)}px Arial, sans-serif`; g.fillText('DAIKIN', 14, h * 0.15);
+  g.fillStyle = '#222'; g.font = `700 ${Math.round(h * 0.075)}px Arial, sans-serif`;
+  g.fillText('DAIKIN INDUSTRIES, LTD.', w * 0.42, h * 0.14);
+  const rows = [['MODEL', 'RZQS125AV1'], ['POWER SUPPLY', '1~ 50Hz 220-240V'], ['REFRIGERANT', 'R410A   3.4 kg'], ['RATED CAP. (C/H)', '12.5 / 14.0 kW'], ['PS HIGH / LOW', '4.0 / 1.6 MPa'], ['WEIGHT', '108 kg'], ['SERIAL No.', 'E000125']];
+  g.font = `${Math.round(h * 0.068)}px Arial, sans-serif`;
+  rows.forEach(([a, b], k) => {
+    const y = h * (0.28 + k * 0.1);
+    g.fillStyle = '#333'; g.fillText(a, 14, y); g.fillStyle = '#111'; g.font = `700 ${Math.round(h * 0.068)}px Arial, sans-serif`; g.fillText(b, w * 0.46, y); g.font = `${Math.round(h * 0.068)}px Arial, sans-serif`;
+    g.fillStyle = '#9a9da0'; g.fillRect(14, y + h * 0.02, w - 28, 1);
+  });
+}
+function drawWarn(g, w, h) {
+  g.fillStyle = '#f2f0e6'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#f4c400'; g.beginPath(); g.moveTo(w * 0.15, h * 0.8); g.lineTo(w * 0.28, h * 0.2); g.lineTo(w * 0.41, h * 0.8); g.closePath(); g.fill();
+  g.strokeStyle = '#111'; g.lineWidth = 3; g.stroke();
+  g.fillStyle = '#111'; g.font = `900 ${Math.round(h * 0.4)}px Arial`; g.textAlign = 'center'; g.fillText('!', w * 0.28, h * 0.74);
+  g.textAlign = 'left'; g.font = `700 ${Math.round(h * 0.16)}px Arial`; g.fillText('CAUTION', w * 0.47, h * 0.38);
+  g.font = `${Math.round(h * 0.11)}px Arial`; g.fillText('Disconnect power', w * 0.47, h * 0.56); g.fillText('before servicing', w * 0.47, h * 0.7);
+}
+
+// ---------- cache ----------
+let CACHE = null;
+function cache(THREE, ctx) {
+  if (CACHE && CACHE.THREE === THREE) return CACHE;
+  const S = (p) => new THREE.MeshStandardMaterial(p);
+  const fins = ctx.labelTex(256, 64, drawFins);
+  fins.wrapS = fins.wrapT = THREE.RepeatWrapping;
+  const mat = {
+    body: S({ color: 0xbebcb1, roughness: 0.42, metalness: 0.05 }),          // ivory white 5Y7.5/1
+    bodyIn: S({ color: 0x6e6d68, roughness: 0.6, metalness: 0.05, side: THREE.DoubleSide }),
+    grille: S({ color: 0x1b1c1e, roughness: 0.55, metalness: 0.05 }),
+    fan: S({ color: 0x2a2c2f, roughness: 0.6, metalness: 0.0, side: THREE.DoubleSide }),
+    fins: S({ color: 0xffffff, map: fins, roughness: 0.5, metalness: 0.3 }),
+    coilEdge: S({ color: 0x55595d, roughness: 0.6, metalness: 0.4 }),
+    brass: S({ color: 0xc9a25a, roughness: 0.35, metalness: 1.0 }),
+    galv: S({ color: 0x9da2a6, roughness: 0.45, metalness: 0.8 }),
+  };
+  CACHE = { THREE, mat, tex: { logo: ctx.labelTex(1024, 160, drawLogo), plate: ctx.labelTex(512, 340, drawPlate), warn: ctx.labelTex(256, 96, drawWarn) } };
+  return CACHE;
+}
+
+// ---------- build ----------
+function build(THREE, ctx, opts = {}) {
+  const { mat, tex } = cache(THREE, ctx);
+  const M = ctx.MAT;
+  const bins = new Map();
+  const put = (m, g) => { if (!bins.has(m)) bins.set(m, []); bins.get(m).push(g); };
+  const box = (m, x0, x1, y0, y1, z0, z1) => {
+    const g = new THREE.BoxGeometry(Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0));
+    g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); put(m, g); return g;
+  };
+  const xform = (g, { rx = 0, ry = 0, rz = 0, at = [0, 0, 0] } = {}) => {
+    if (rx) g.rotateX(rx); if (ry) g.rotateY(ry); if (rz) g.rotateZ(rz); g.translate(...at); return g;
+  };
+  const shapeOn = (m, shape, opts2) => put(m, xform(new THREE.ShapeGeometry(shape, 6), opts2));
+  const cyl = (m, r0, r1, len, segs, opts2) => put(m, xform(new THREE.CylinderGeometry(r0, r1, len, segs), opts2));
+
+  const out = new THREE.Group();
+  out.name = 'daikin';
+
+  // ===== base: two foot rails (U channel look) + bottom pan =====
+  for (const sx of [-1, 1]) {
+    const x = sx * FOOT_X;
+    box(mat.body, x - FOOT_W / 2, x + FOOT_W / 2, 0.0, 0.004, -FOOT_L / 2, FOOT_L / 2);           // foot flange
+    box(mat.body, x - FOOT_W / 2 + 0.012, x + FOOT_W / 2 - 0.012, 0.004, FOOT_H, -FOOT_L / 2 + 0.02, FOOT_L / 2 - 0.02); // web
+    for (const sz of [-1, 1]) {
+      // end lugs carrying the elongated anchor slots
+      const z0 = sz * (FOOT_L / 2), zc = sz * SLOT_Z;
+      shapeOn(M.hole, rrShape(THREE, 0.016, 0.034, 0.008), { rx: -Math.PI / 2, at: [x, 0.0042, zc] });
+      box(mat.body, x - FOOT_W / 2, x + FOOT_W / 2, 0.004, 0.02, z0 - sz * 0.006, z0); // end turn-up
+    }
+  }
+  box(mat.galv, XL + 0.01, XR - 0.01, FOOT_H - 0.004, Y0 + 0.012, ZB + 0.01, ZF - 0.01); // bottom pan
+  // drain holes visible on the pan edge are hidden; skip
+
+  // ===== casing shell =====
+  const core = [];
+  const bodyPut = (g) => core.push(g);
+  // front panel with two fan openings and the piping recess window
+  {
+    const s = new THREE.Shape();
+    const x0 = XL + 0.008, x1 = XR - 0.008, y0 = Y0, y1 = H - TOP_T;
+    s.moveTo(x0, y0); s.lineTo(PR.x0, y0); s.lineTo(PR.x0, PR.y1 - 0.012); s.quadraticCurveTo(PR.x0, PR.y1, PR.x0 + 0.012, PR.y1);
+    s.lineTo(x1, PR.y1); s.lineTo(x1, y1); s.lineTo(x0, y1); s.lineTo(x0, y0);
+    for (const fy of FAN_Y) { const hpath = new THREE.Path(); hpath.absarc(FAN_X, fy, R_OPEN, 0, TAU, true); s.holes.push(hpath); }
+    const g = new THREE.ExtrudeGeometry(s, { depth: 0.0012, bevelEnabled: false, curveSegments: 40 });
+    g.translate(0, 0, ZF - 0.0012); bodyPut(g);
+  }
+  // rounded vertical front corners (r 8 mm) and rear-right corner
+  const corner = (cx, cz, a0, y0 = Y0, y1 = H - TOP_T) => {
+    const g = new THREE.CylinderGeometry(0.008, 0.008, y1 - y0, 6, 1, true, a0, Math.PI / 2);
+    g.translate(cx, (y0 + y1) / 2, cz); bodyPut(g);
+  };
+  corner(XR - 0.008, ZF - 0.008, Math.PI / 2 - Math.PI / 2, PR.y1);   // front right (above recess)
+  corner(XL + 0.008, ZF - 0.008, -Math.PI / 2);                       // front left
+  corner(XR - 0.008, ZB + 0.008, Math.PI / 2);                        // rear right
+  // right side panel (solid), split around the service cover
+  box(mat.body, XR - 0.0012, XR, Y0, H - TOP_T, ZB + 0.008, ZF - 0.008); // full side sheet (cover sits proud of it)
+  // left front pillar (solid strip in front of the coil) and left rear post
+  box(mat.body, XL, XL + 0.0012, Y0, H - TOP_T, ZF - COIL_T - 0.05, ZF - 0.008);
+  box(mat.body, XL, XL + 0.02, Y0, H - TOP_T, ZB, ZB + 0.02);
+  // rear: right compressor-compartment sheet, coil elsewhere
+  box(mat.body, 0.30, XR - 0.008, Y0, H - TOP_T, ZB, ZB + 0.0012);
+  // bottom and top rails of the coil faces
+  box(mat.body, XL, 0.30, Y0, Y0 + 0.03, ZB, ZB + 0.0012);
+  box(mat.body, XL, XL + 0.0012, Y0, Y0 + 0.03, ZB, ZF - 0.05);
+  box(mat.body, XL, 0.30, H - TOP_T - 0.02, H - TOP_T, ZB, ZB + 0.0012);
+  box(mat.body, XL, XL + 0.0012, H - TOP_T - 0.02, H - TOP_T, ZB, ZF - 0.05);
+  // top plate with turned-down flange and slightly rounded edge
+  {
+    const s = rrShape(THREE, W - 0.004, D - 0.004, 0.01);
+    const g = new THREE.ExtrudeGeometry(s, { depth: TOP_T - 0.004, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.002, bevelSegments: 2, curveSegments: 4 });
+    g.rotateX(-Math.PI / 2); g.translate(0, H - TOP_T + 0.002, 0);
+    // after rotateX(-pi/2) the shape's y maps to -z; shape is symmetric so fine
+    bodyPut(g);
+  }
+  for (const g of core) put('core', g);
+
+  // inner bell mouths (venturi) behind each opening + dark fan chamber
+  for (const fy of FAN_Y) {
+    const pts = [];
+    for (let k = 0; k <= 8; k++) { const t = k / 8; pts.push(new THREE.Vector2(R_OPEN - 0.028 * Math.sin(t * Math.PI / 2), -t * 0.075)); }
+    const g = new THREE.LatheGeometry(pts, 48);
+    g.rotateX(Math.PI / 2); g.translate(FAN_X, fy, ZF - 0.0012); put(mat.bodyIn, g);
+    // back of the chamber (the coil's inner face, dark)
+    const d = new THREE.CircleGeometry(R_OPEN + 0.01, 40); d.translate(FAN_X, fy, ZB + COIL_T + 0.004); put(M.hole, d);
+    // motor + bracket (two vertical straps from the bell mouth support)
+    cyl(mat.grille, 0.065, 0.065, 0.07, 24, { rx: Math.PI / 2, at: [FAN_X, fy, -0.03] });
+    box(mat.fan, FAN_X - 0.012, FAN_X + 0.012, fy - R_OPEN + 0.02, fy + R_OPEN - 0.02, -0.075, -0.068);
+  }
+  // chamber side walls so the openings do not look into nothing
+  box(M.hole, XL + 0.02, 0.29, Y0 + 0.012, H - TOP_T - 0.002, ZB + COIL_T + 0.003, ZB + COIL_T + 0.0035);
+
+  // ===== heat exchanger (L-shaped: rear + left side) with ivory wire guard =====
+  {
+    const yA = Y0 + 0.03, yB = H - TOP_T - 0.02;
+    // rear face
+    const rw = 0.30 - (XL + 0.02), rh = yB - yA;
+    const gr = new THREE.PlaneGeometry(rw, rh); gr.rotateY(Math.PI); gr.translate((XL + 0.02 + 0.30) / 2, (yA + yB) / 2, ZB + 0.004);
+    const uv = gr.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * rw * 6, uv.getY(k) * rh * 6);
+    put(mat.fins, gr);
+    // left face
+    const lw = (ZF - 0.05) - (ZB + 0.02);
+    const gl = new THREE.PlaneGeometry(lw, rh); gl.rotateY(-Math.PI / 2); gl.translate(XL + 0.004, (yA + yB) / 2, (ZF - 0.05 + ZB + 0.02) / 2);
+    const uv2 = gl.attributes.uv; for (let k = 0; k < uv2.count; k++) uv2.setXY(k, uv2.getX(k) * lw * 6, uv2.getY(k) * rh * 6);
+    put(mat.fins, gl);
+    // coil end plates / inner faces
+    box(mat.coilEdge, XL + 0.004, 0.30, yA, yB, ZB + 0.004, ZB + COIL_T);
+    box(mat.coilEdge, XL + 0.004, XL + COIL_T, yA, yB, ZB + COIL_T, ZF - 0.05);
+    // wire guard: horizontal wires + vertical stays (rear and left)
+    const wr = 0.0012;
+    for (let y = yA + 0.025; y < yB - 0.01; y += 0.05) {
+      box(mat.body, XL + 0.02, 0.30, y - wr, y + wr, ZB - 0.0005, ZB + 0.0027);
+      box(mat.body, XL - 0.0005, XL + 0.0027, y - wr, y + wr, ZB + 0.02, ZF - 0.05);
+    }
+    for (let x = XL + 0.12; x < 0.29; x += 0.13) box(mat.body, x - 0.003, x + 0.003, yA, yB, ZB - 0.0012, ZB + 0.003);
+    for (const z of [-0.06, 0.04]) box(mat.body, XL - 0.0012, XL + 0.003, yA, yB, z - 0.003, z + 0.003);
+  }
+
+  // ===== fans (3-blade swept propellers) =====
+  for (const fy of FAN_Y) {
+    const hubR = 0.072, zc = ZF - 0.07;
+    const hub = new THREE.CylinderGeometry(hubR * 0.86, hubR, 0.06, 32); hub.rotateX(Math.PI / 2); hub.translate(FAN_X, fy, zc); put(mat.fan, hub);
+    const cap = new THREE.SphereGeometry(hubR * 0.86, 24, 6, 0, TAU, 0, Math.PI / 2 * 0.55); cap.rotateX(Math.PI / 2); cap.scale(1, 1, 0.35); cap.translate(FAN_X, fy, zc + 0.03); put(mat.fan, cap);
+    for (let b = 0; b < 3; b++) {
+      const nu = 10, nv = 8, pos = [], idx = [];
+      for (let i = 0; i <= nu; i++) {
+        const u = i / nu, r = hubR * 0.95 + u * (R_FAN - hubR * 0.95);
+        const chord = 0.95 - 0.25 * u;            // angular chord (rad)
+        const sweep = 0.55 * u * u;               // forward sweep of the blade
+        for (let j = 0; j <= nv; j++) {
+          const v = j / nv, th = b * TAU / 3 + sweep + (v - 0.5) * chord;
+          const z = zc + (v - 0.5) * (0.07 - 0.03 * u) + 0.01 * Math.sin(v * Math.PI);
+          pos.push(FAN_X + r * Math.cos(th), fy + r * Math.sin(th), z);
+        }
+      }
+      for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) { const a = i * (nv + 1) + j, c = a + nv + 1; idx.push(a, c, a + 1, c, c + 1, a + 1); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+      put(mat.fan, g);
+    }
+  }
+
+  // ===== front grilles: black ring + horizontal bars + vertical ribs + centre boss =====
+  for (const fy of FAN_Y) {
+    const zg = ZF + 0.004;
+    const ring = new THREE.TorusGeometry(R_GR - 0.007, 0.0075, 6, 64); ring.scale(1, 1, 0.9); ring.translate(FAN_X, fy, zg); put(mat.grille, ring);
+    const flange = new THREE.RingGeometry(R_OPEN - 0.004, R_GR, 64); flange.translate(FAN_X, fy, ZF + 0.0006); put(mat.grille, flange);
+    const pitch = 0.0145, rIn = R_GR - 0.012;
+    for (let dy = -rIn + pitch * 0.6; dy < rIn; dy += pitch) {
+      const hl = Math.sqrt(rIn * rIn - dy * dy);
+      box(mat.grille, FAN_X - hl, FAN_X + hl, fy + dy - 0.0015, fy + dy + 0.0015, zg - 0.006, zg + 0.003);
+    }
+    for (const dx of [-0.105, 0.105]) {
+      const hl = Math.sqrt(rIn * rIn - dx * dx);
+      box(mat.grille, FAN_X + dx - 0.003, FAN_X + dx + 0.003, fy - hl, fy + hl, zg - 0.008, zg + 0.0045);
+    }
+    box(mat.grille, FAN_X - rIn, FAN_X + rIn, fy - 0.003, fy + 0.003, zg - 0.008, zg + 0.0045);
+    const boss = new THREE.CylinderGeometry(0.05, 0.052, 0.012, 32); boss.rotateX(Math.PI / 2); boss.translate(FAN_X, fy, zg); put(mat.grille, boss);
+    // fixing lugs at 4 points on the ring
+    for (let k = 0; k < 4; k++) {
+      const a = Math.PI / 4 + k * Math.PI / 2, x = FAN_X + Math.cos(a) * (R_GR + 0.006), y = fy + Math.sin(a) * (R_GR + 0.006);
+      cyl(mat.grille, 0.011, 0.011, 0.006, 12, { rx: Math.PI / 2, at: [x, y, ZF + 0.003] });
+      cyl(M.ssDull, 0.004, 0.004, 0.003, 8, { rx: Math.PI / 2, at: [x, y, ZF + 0.0072] });
+    }
+  }
+
+  // ===== service cover (L-shaped, front-right corner) =====
+  {
+    const t = 0.0015, r = 0.008;
+    box(mat.body, XR, XR + t, SC.y0, SC.y1, SC.z0, ZF - r);                 // side leaf
+    box(mat.body, SC.xf, XR - r, SC.y0, SC.y1, ZF, ZF + t);                 // front leaf
+    const g = new THREE.CylinderGeometry(r + t, r + t, SC.y1 - SC.y0, 6, 1, false, 0, Math.PI / 2);
+    g.translate(XR - r, (SC.y0 + SC.y1) / 2, ZF - r); put(mat.body, g);
+    // seam shadows around the cover
+    box(M.hole, XR - 0.0002, XR + 0.0005, SC.y0 - 0.003, SC.y0, SC.z0, ZF - 0.006);
+    box(M.hole, XR - 0.0002, XR + 0.0005, SC.y1, SC.y1 + 0.003, SC.z0, ZF - 0.006);
+    box(M.hole, XR - 0.0002, XR + 0.0005, SC.y0, SC.y1, SC.z0 - 0.003, SC.z0);
+    box(M.hole, SC.xf - 0.003, SC.xf, SC.y0, SC.y1, ZF - 0.0002, ZF + 0.0005);
+    box(M.hole, SC.xf, XR - 0.006, SC.y0 - 0.003, SC.y0, ZF - 0.0002, ZF + 0.0005);
+    box(M.hole, SC.xf, XR - 0.006, SC.y1, SC.y1 + 0.003, ZF - 0.0002, ZF + 0.0005);
+    // handle recess in the cover (side) + fixing screw
+    shapeOn(M.hole, rrShape(THREE, 0.13, 0.034, 0.016), { ry: Math.PI / 2, at: [XR + t + 0.0004, SC.y1 - 0.065, (SC.z0 + ZF) / 2] });
+    shapeOn(mat.bodyIn, rrShape(THREE, 0.12, 0.012, 0.006), { ry: Math.PI / 2, at: [XR + t + 0.0007, SC.y1 - 0.074, (SC.z0 + ZF) / 2] });
+    cyl(M.ssDull, 0.005, 0.005, 0.003, 10, { rz: Math.PI / 2, at: [XR + t + 0.0015, SC.y0 + 0.03, SC.z0 + 0.03] });
+    cyl(M.ssDull, 0.005, 0.005, 0.003, 10, { rx: Math.PI / 2, at: [(SC.xf + XR) / 2, SC.y1 - 0.03, ZF + t + 0.0015] });
+  }
+  // second handle recess, upper rear of the right side
+  shapeOn(M.hole, rrShape(THREE, 0.12, 0.032, 0.016), { ry: Math.PI / 2, at: [XR + 0.0004, 1.0, -0.085] });
+  shapeOn(mat.bodyIn, rrShape(THREE, 0.11, 0.011, 0.005), { ry: Math.PI / 2, at: [XR + 0.0007, 0.991, -0.085] });
+  // front lower-left grip recess
+  shapeOn(M.hole, rrShape(THREE, 0.06, 0.03, 0.015), { ry: -Math.PI / 2, at: [XL - 0.0004, 0.62, ZF - 0.042] });
+
+  // ===== piping recess with liquid + gas stop valves =====
+  {
+    const back = ZF - 0.09;
+    box(mat.bodyIn, PR.x0, XR - 0.002, PR.y0 - 0.025, PR.y0, back, ZF);        // recess floor (pipe intake plate)
+    box(mat.bodyIn, PR.x0, PR.x0 + 0.0012, PR.y0, PR.y1, back, ZF);             // recess left wall
+    box(mat.bodyIn, PR.x0, XR - 0.002, PR.y1, PR.y1 + 0.0012, back, ZF);        // ceiling
+    box(M.hole, PR.x0, XR - 0.002, PR.y0, PR.y1, back, back + 0.001);           // back
+    box(mat.body, XR - 0.0012, XR, Y0, PR.y1, ZB + 0.008, ZF - 0.004);           // side sheet below the cover
+    box(mat.body, XR - 0.03, XR, Y0, PR.y0 - 0.025, ZF - 0.0012, ZF);           // front lip under the recess
+    // valve mounting plate
+    box(mat.galv, PR.x0 + 0.01, XR - 0.012, PR.y0 + 0.01, PR.y1 - 0.01, back + 0.001, back + 0.004);
+    const valve = (x, y, rPipe, nutAF) => {
+      // body block, stem cap (top), service port (side), flare nut on the front
+      box(mat.brass, x - 0.018, x + 0.018, y - 0.02, y + 0.02, back + 0.004, back + 0.05);
+      cyl(mat.brass, 0.011, 0.011, 0.028, 16, { at: [x, y + 0.034, back + 0.027] });
+      cyl(M.black, 0.0125, 0.0125, 0.012, 6, { at: [x, y + 0.052, back + 0.027] });
+      cyl(mat.brass, 0.006, 0.006, 0.02, 12, { rz: Math.PI / 2, at: [x - 0.028, y, back + 0.03] });
+      cyl(M.black, 0.0075, 0.0075, 0.01, 6, { rz: Math.PI / 2, at: [x - 0.041, y, back + 0.03] });
+      cyl(mat.brass, rPipe + 0.003, rPipe + 0.003, 0.02, 16, { rx: Math.PI / 2, at: [x, y, back + 0.06] });
+      cyl(mat.brass, nutAF / 2 / Math.cos(Math.PI / 6), nutAF / 2 / Math.cos(Math.PI / 6), 0.024, 6, { rx: Math.PI / 2, at: [x, y, back + 0.082] });
+      cyl(M.hole, rPipe * 0.8, rPipe * 0.8, 0.001, 12, { rx: Math.PI / 2, at: [x, y, back + 0.0945] });
+    };
+    valve(meta.ports.liquid.pos[0], meta.ports.liquid.pos[1], 0.00476, 0.022);
+    valve(meta.ports.gas.pos[0], meta.ports.gas.pos[1], 0.00795, 0.029);
+  }
+
+  // ===== panel seams on the front (top strip / right strip joints) =====
+  box(M.hole, XL + 0.01, XR - 0.01, H - TOP_T - 0.001, H - TOP_T, ZF - 0.0003, ZF + 0.0003);
+
+  // ===== assemble meshes =====
+  for (const [m, list] of bins) {
+    const mesh = new THREE.Mesh(mergeGeos(THREE, list), m === 'core' ? mat.body : m);
+    if (m === 'core') { ctx.core(mesh); mesh.name = 'casing'; }
+    out.add(mesh);
+  }
+
+  // ===== decals: DAIKIN logo (front, top left), nameplate + caution label (right side) =====
+  const logo = ctx.decal(tex.logo, 0.23, 0.036); logo.position.set(XL + 0.145, H - TOP_T - 0.036, ZF + 0.0006); out.add(logo);
+  const plate = ctx.decal(tex.plate, 0.15, 0.10); plate.rotation.y = Math.PI / 2; plate.position.set(XR + 0.0006, 0.93, 0.06); out.add(plate);
+  const warn = ctx.decal(tex.warn, 0.09, 0.034); warn.rotation.y = Math.PI / 2; warn.position.set(XR + 0.0022, SC.y0 + 0.08, (SC.z0 + ZF) / 2); out.add(warn);
+
+  out.userData.ports = meta.ports;
+  return out;
+}
+
+return { meta: typeof meta !== 'undefined' ? meta : {}, build, defaultOptions: typeof defaultOptions !== 'undefined' ? defaultOptions : {} };
+})();
 const PI = Math.PI;
 const mm = (v) => v / 1000;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -4453,7 +4833,7 @@ const deckTopY = (spec, lv) => levelY(spec, lv.slot) + (lv.deck === 'acacia' ? A
 // From the brochures: guide w = across the opening, d = front to back; boxes = [pelmet, max shutter height].
 // Ozroll doesn't list slat thickness, guide size or pelmet heights in its sheet: those are estimates (est).
 const SLATS = {
-  oz40: { label: 'Ozroll Rollashield 40 mm curved (AR400)', short: 'Ozroll 40', pitch: 0.040, t: 0.009, kg: 4.0, guide: { w: 0.053, d: 0.022 }, est: true, maxArea: 8, manual: 'strap winder or spring assist' },
+  oz40: { label: 'Ozroll Rollashield 40 mm curved (AR400)', short: 'Ozroll 40', pitch: 0.040, t: 0.009, kg: 4.0, guide: { w: 0.053, d: 0.022 }, guideDEst: true, boxes: [[0.150, 1.3], [0.165, 1.7], [0.180, 2.135], [0.205, 3.0], [0.230, 3.8]], inclBox: true, maxArea: 8, manual: 'strap, winder or spring assist' },
   cw42: { label: 'CW Products 42 mm double line', short: 'CW 42', pitch: 0.042, t: 0.0085, kg: 3.2, guide: { w: 0.053, d: 0.022 }, boxes: [[0.150, 1.3], [0.165, 1.7], [0.180, 2.2], [0.205, 2.6]], maxArea: 8, manual: 'spring loaded with key lock, or strap/cord winder up to 20 kg' },
   cw55: { label: 'CW Products 55 mm widespan', short: 'CW 55', pitch: 0.055, t: 0.012, kg: 4.0, guide: { w: 0.068, d: 0.025 }, boxes: [[0.180, 1.85], [0.205, 2.4], [0.230, 3.0]], maxArea: 10, manual: 'spring loaded with key lock, or steel cable winder up to 50 kg' },
   cw77: { label: 'CW Products 77 mm widespan', short: 'CW 77', pitch: 0.077, t: 0.0185, kg: 5.0, guide: { w: 0.105, d: 0.037 }, boxes: [[0.250, 2.0], [0.300, 3.0]], inclBox: true, maxArea: 15, manual: null },
@@ -5461,16 +5841,13 @@ function buildRoom() {
       G.room.add(brickBox(-0.23, D + 2.4, -0.12, top));
     }
     if (ctx) {
-      for (const [y0, y1] of [[0.22, 0.86], [0.98, 1.62]]) {
-        const ac = new THREE.Group();
-        const z0 = D + 1.0, z1 = D + 1.85;
-        ac.add(boxAt(W - 0.31, y0, z0, W - 0.01, y1, z1, MAT.ac));
-        const grillR = 0.25;
-        const gr = new THREE.Mesh(new THREE.CircleGeometry(grillR, 40), MAT.fan);
-        gr.position.set(W - 0.312, (y0 + y1) / 2, z0 + 0.32);
-        gr.rotation.y = -PI / 2;
-        ac.add(gr);
-        tip(ac, 'Air-con condenser', 'Context only');
+      // Daikin RZQS125AV1 outdoor unit with its back to the brick, fans blowing out across the yard
+      if (VESSEL_MODULES.daikin) {
+        const ac = vesselBuild('daikin');
+        ac.rotation.y = -PI / 2; // unit front (+z) faces the nook side of the yard (-x)
+        ac.position.set(W - 0.01 - 0.205, -0.004, D + 1.425); // foot rails 10 mm off the brick, on the paving
+        ac.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+        tip(ac, 'Air-con outdoor unit', `${VESSEL_MODULES.daikin.meta.name}. ${VESSEL_MODULES.daikin.meta.dims}. Context only`);
         G.room.add(ac);
       }
     }
@@ -6256,7 +6633,7 @@ function shutterLayout() {
     L.floorR = floorY(L.zs, rx0 + POST_C.right / 2);
     L.crossGap = L.floorS - floorY(L.zs, rx0);   // wedge under the right end of the bottom bar
     L.B = headboxFor(H - L.floorS, slat);
-    L.postL = { x0: lx0, x1: lx1, z0: zF - pd, z1: zF, yb: floorY(zF - pd / 2, (lx0 + lx1) / 2) };
+    L.postL = { x0: lx0, x1: lx1, z0: zF - pd, z1: zF, yb: floorY(zF, lx0) }; // slab at the leg's outer corner, where it was measured
     L.frameD = fd;
     const gl0 = lx1 - ov, gr1 = rx0 + ov;
     L.box = { x0: gl0, x1: gr1, y0: H, y1: H + L.B, z0: zF + 0.002, z1: zF + 0.002 + L.B, chamfer: 'outer' };
@@ -6270,7 +6647,7 @@ function shutterLayout() {
     const by1 = H - POST_C.rise - POST_C.tabT;
     L.uBeam = { x0: lx0, x1: W, y0: by1 - POST_C.beamH, y1: by1, z0: zF - pd, z1: zF };
     L.postL.y1 = L.uBeam.y0;
-    L.dumpJamb = { y1: L.uBeam.y0, x0: rx0, x1: W, z0: zF - pd, z1: zF, xc: W - (POST_C.right - ov) / 2, outLen: fd + 0.015, rhs: true, yb: floorY(zF - pd / 2, rx0 + POST_C.right / 2) };
+    L.dumpJamb = { y1: L.uBeam.y0, x0: rx0, x1: W, z0: zF - pd, z1: zF, xc: W - (POST_C.right - ov) / 2, outLen: fd + 0.015, rhs: true, yb: floorY(zF, W) };
     L.curtainTop = H;
   } else {
     // a free-standing left post sits wedged against the white wall step, which fixes the shutter line
@@ -6351,9 +6728,12 @@ function windSolve(R, h) {
 }
 function makeRoll(L) {
   const t = L.slat.t, p = L.slat.pitch, b = L.box;
+  const cz = b.z0 + L.B / 2;
   const R = {
-    cz: b.z0 + L.B / 2, cy: b.y0 + L.B / 2, qz: L.zs, qy: L.curtainTop,
-    dir: 1, // the curtain winds with its convex (street) face outward, so the concave back sits on the roll
+    cz, cy: b.y0 + L.B / 2, qz: L.zs, qy: L.curtainTop,
+    // the concave face of every slat points toward the side the headbox sits on and cradles the axle on the roll:
+    // headbox outside (C) -> concave to the street, wound clockwise seen from the left; headbox inside -> mirrored
+    dir: cz >= L.zs ? -1 : 1,
     rBase: 0.035, r1: 0.035 + 0.4 * t + 0.0004,
     k: t + 0.0006, // roll-tight: each wrap is one slat thickness plus a hair (curved slats sit snug on the roll)
   };
@@ -6371,14 +6751,15 @@ function makeRoll(L) {
   return R;
 }
 
-function slatGeo(slat, len) {
+function slatGeo(slat, len, f = 1) {
   const p = slat.pitch, t = slat.t;
   return extrudeX((s) => {
-    s.moveTo(-t * 0.4, 0);
-    s.lineTo(t * 0.05, 0);
-    s.quad(t * 0.95, p * 0.5, t * 0.05, p - 0.0016);
-    s.lineTo(-t * 0.4, p - 0.0016);
-    s.quad(-t * 0.25, p * 0.5, -t * 0.4, 0);
+    // f = +1: concave face toward the street (+z), convex toward the nook; f = -1 mirrored. On the roll the concave side cradles the axle
+    s.moveTo(f * t * 0.4, 0);
+    s.lineTo(-f * t * 0.05, 0);
+    s.quad(-f * t * 0.95, p * 0.5, -f * t * 0.05, p - 0.0016);
+    s.lineTo(f * t * 0.4, p - 0.0016);
+    s.quad(f * t * 0.25, p * 0.5, f * t * 0.4, 0);
   }, len, 8);
 }
 
@@ -6480,7 +6861,7 @@ function buildShutter() {
 
   // Curtain: instanced slats + bottom bar
   const len = L.cx1 - L.cx0;
-  const sg = slatGeo(L.slat, len);
+  const sg = slatGeo(L.slat, len, -L.roll.dir);
   curtain.inst = new THREE.InstancedMesh(sg, MAT.shutter, L.roll.N);
   curtain.inst.castShadow = true; curtain.inst.receiveShadow = true;
   tip(curtain.inst, 'Shutter curtain', `${L.slat.label} · ≈ ${L.area.toFixed(1)} m², ${Math.round(L.kg)} kg with bottom bar`);
@@ -6523,9 +6904,9 @@ function buildShutter() {
   for (const gd of L.guides) {
     const back = gd.side === 'L' ? gd.x0 : gd.x1, inn = gd.side === 'L' ? 1 : -1;
     const into = gd.type === 'faceframe' ? (gd.side === 'L' ? 'an M6 rivnut in the 50 × 50 left post' : 'an M6 rivnut in the 100 × 50 right post') : L.dumpJamb && gd.side === 'R' ? 'an M6 rivnut in the dump post' : gd.side === 'L' ? (L.leftPost ? 'an M6 rivnut in the left post' : 'the aluminium jamb') : 'the brick';
-    const ya = L.floorS + 0.1, yb = gTop - 0.1, nSeg = Math.max(1, Math.ceil((yb - ya) / 0.45 - 1e-6));
+    const ya = floorY(L.zs, (gd.x0 + gd.x1) / 2) + 0.1, yb = gTop - 0.1, nSeg = Math.max(1, Math.ceil((yb - ya) / 0.45 - 1e-6));
     const gys = Array.from({ length: nSeg + 1 }, (_, i) => ya + ((yb - ya) * i) / nSeg);
-    L.guideFix = { n: gys.length, pitch: (yb - ya) / nSeg };
+    L.guideFix = { ...(L.guideFix || {}), n: gys.length, pitch: (yb - ya) / nSeg, [gd.side]: gys.slice() };
     for (const y of gys) {
       const b = new THREE.Group();
       b.userData.role = 'fix';
@@ -7395,8 +7776,8 @@ function updateShutterReadout() {
   el.replaceChildren(
     h('li', {}, h('b', {}, 'Curtain '), `${Math.round((L.cx1 - L.cx0) * 1000)} × ${Math.round((L.hangMax + 0.05) * 1000)} · ${L.area.toFixed(1)} m² · about ${Math.round(L.kg)} kg`),
     h('li', {}, h('b', {}, 'Headbox '), `${Math.round(L.B * 1000)} pelmet for a ${Math.round(L.hangMax * 1000)} mm drop${L.slat.boxes ? '' : ' (sized from the roll; Ozroll sheet has no table)'}`),
-    h('li', {}, h('b', {}, 'Slats '), `${L.slat.label}: ${Math.round(L.slat.pitch * 1000)} mm cover, ${L.slat.t * 1000} mm thick${L.slat.est ? ' (est.)' : ''}, ${L.slat.kg} kg/m², foam filled`),
-    h('li', {}, h('b', {}, 'Guides '), `${Math.round(L.slat.guide.w * 1000)} × ${Math.round(L.slat.guide.d * 1000)} mm${L.slat.est ? ' (est.)' : ''}, pile-lined`),
+    h('li', {}, h('b', {}, 'Slats '), `${L.slat.label}: ${Math.round(L.slat.pitch * 1000)} mm cover, ${L.slat.t * 1000} mm thick, ${L.slat.kg} kg/m², foam filled`),
+    h('li', {}, h('b', {}, 'Guides '), `${Math.round(L.slat.guide.w * 1000)} × ${Math.round(L.slat.guide.d * 1000)} mm${L.slat.guideDEst ? ' (depth est.; brochure gives 53 mm only)' : ''}, pile-lined`),
 
     h('li', {}, h('b', {}, 'Floor at the shutter line '), `${Math.round(L.floorS * 1000)} mm above the opening edge`),
   );
@@ -7426,6 +7807,7 @@ function updateShutterReadout() {
       ),
       h('p', { class: 'note' }, L.mount === 'face' ? `Tell the shutter company: face-fit side frames screwed onto two stainless posts (30 mm overlap, M6 rivnuts provided), headbox outside above the opening, held only by its end caps on the side frames (no wall clips); manual ${L.spring ? 'spring-balanced with key lock' : 'drive'}. Clear width ${Math.round(L.clearW * 1000)} mm between the frames.` : `Tell the shutter company: reveal-fit, guides to the floor both sides, standard bottom bar. Clear width ${Math.round(L.clearW * 1000)} mm between ${L.leftPost ? 'a 75 × 75 post on the left, wedged into the corner (slab and ceiling fixed, not fixed to the wall)' : L.mount === 'portal' ? 'the portal frame post on the left' : 'a 50 × 50 × 3 aluminium jamb on the left (anchored through the weatherboard into brick)'} and the 75 × 75 post on the right.`),
     );
+    if (j && L.uBeam) js.append(h('div', { class: 'btns' }, h('button', { type: 'button', class: 'btn', onclick: (e) => exportFabPdf(e.currentTarget) }, 'Download U-frame drawings (A3 PDF)')));
   }
   document.querySelectorAll('#mountSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.m === cfg.shutter.mount)));
   const fr = document.getElementById('frameRow');
@@ -7439,6 +7821,827 @@ function updateShutterReadout() {
   const mr = document.getElementById('motorRow');
   if (mr) mr.hidden = cfg.shutter.drive !== 'motor';
 }
+
+// ---------- U-frame fabrication drawings (A3 PDF) ----------
+// A3 fabrication drawing set for the option-C inverted-U frame, drawn with jsPDF in paper millimetres.
+// makeFabPdf(jsPDF, D) -> jsPDF document. D comes from fabData() in main.js (all sizes in mm).
+function makeFabPdf(jsPDF, D) {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3', compress: true });
+  const PW = 420, PH = 297;
+  const INK = [24, 24, 27], CL = [110, 110, 116], ACC = [214, 88, 22], BLUE = [28, 88, 168], COAT = [52, 52, 56], SOFT = [236, 236, 238], BARE = [196, 200, 206];
+  const SHEETS = ['GENERAL ARRANGEMENT', 'DETAILS: PASS-THROUGHS, BASE PLATES, CEILING TABS', 'DRILLING, RIVNUTS AND FIXINGS', 'FABRICATION AND FINISH SEQUENCE'];
+  const f1 = (v) => (Math.round(v * 10) / 10).toString();
+  const f0 = (v) => Math.round(v).toString();
+  const black = D.finish === 'black';
+
+  // ---------- pens, text, primitives ----------
+  const pen = (w, c = INK, dash) => { doc.setLineWidth(w); doc.setDrawColor(...c); doc.setLineDashPattern(dash || [], 0); };
+  const THICK = 0.5, MED = 0.35, THIN = 0.18;
+  const fill = (c) => doc.setFillColor(...c);
+  const txt = (s, x, y, o = {}) => {
+    doc.setFont('helvetica', o.bold ? 'bold' : o.italic ? 'oblique' : 'normal');
+    doc.setFontSize(o.size || 7);
+    doc.setTextColor(...(o.color || INK));
+    doc.text(String(s), x, y, { align: o.align || 'left', angle: o.angle || 0, baseline: o.base || 'alphabetic', maxWidth: o.maxWidth });
+  };
+  const ln = (x1, y1, x2, y2) => doc.line(x1, y1, x2, y2);
+  const poly = (pts, closed = false, style = 'S') => {
+    if (pts.length < 2) return;
+    const segs = [];
+    for (let i = 1; i < pts.length; i++) segs.push([pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]]);
+    doc.lines(segs, pts[0][0], pts[0][1], [1, 1], style, closed);
+  };
+  const arrowHead = (x, y, dx, dy, c = INK) => {
+    const L = 2.2, Wd = 0.7, nx = -dy, ny = dx;
+    fill(c);
+    doc.triangle(x, y, x - dx * L + nx * Wd, y - dy * L + ny * Wd, x - dx * L - nx * Wd, y - dy * L - ny * Wd, 'F');
+  };
+  const dot = (x, y, r = 0.5, c = INK) => { fill(c); doc.circle(x, y, r, 'F'); };
+  const hatch = (x0, y0, x1, y1, sp = 1.4, c = INK) => {
+    pen(0.12, c);
+    const h = y1 - y0;
+    for (let cc = x0 - h; cc < x1; cc += sp) {
+      const t0 = Math.max(0, x0 - cc), t1 = Math.min(h, x1 - cc);
+      if (t1 > t0) ln(cc + t0, y1 - t0, cc + t1, y1 - t1);
+    }
+  };
+  const view = (px, py, s) => ({ s, X: (x) => px + x * s, Y: (y) => py - y * s });
+  const vrect = (v, x0, y0, x1, y1, style = 'S') => doc.rect(v.X(Math.min(x0, x1)), v.Y(Math.max(y0, y1)), Math.abs(x1 - x0) * v.s, Math.abs(y1 - y0) * v.s, style);
+
+  // ---------- dimensioning (AS 1100 style: closed arrowheads, text above the line, reading from below or the right) ----------
+  const EXT_GAP = 1, EXT_OVER = 1.6;
+  function dimH(xa, xb, yLine, ya, yb, label, o = {}) {
+    pen(THIN, o.c || INK);
+    if (ya != null) ln(xa, ya + Math.sign(yLine - ya) * EXT_GAP, xa, yLine + Math.sign(yLine - ya) * EXT_OVER);
+    if (yb != null) ln(xb, yb + Math.sign(yLine - yb) * EXT_GAP, xb, yLine + Math.sign(yLine - yb) * EXT_OVER);
+    const w = Math.abs(xb - xa), lo = Math.min(xa, xb), hi = Math.max(xa, xb);
+    if (w >= 7) { ln(lo, yLine, hi, yLine); arrowHead(lo, yLine, -1, 0, o.c); arrowHead(hi, yLine, 1, 0, o.c); }
+    else { ln(lo - 5, yLine, hi + 5, yLine); arrowHead(lo, yLine, 1, 0, o.c); arrowHead(hi, yLine, -1, 0, o.c); }
+    const tx = o.tx != null ? o.tx : (w >= Math.max(7, String(label).length * 1.35) ? (lo + hi) / 2 : hi + 2 + String(label).length * 0.7);
+    txt(label, tx, yLine - 0.9, { align: 'center', size: o.size || 7, color: o.c || INK, bold: o.bold });
+  }
+  function dimV(ya, yb, xLine, xa, xb, label, o = {}) {
+    pen(THIN, o.c || INK);
+    if (xa != null) ln(xa + Math.sign(xLine - xa) * EXT_GAP, ya, xLine + Math.sign(xLine - xa) * EXT_OVER, ya);
+    if (xb != null) ln(xb + Math.sign(xLine - xb) * EXT_GAP, yb, xLine + Math.sign(xLine - xb) * EXT_OVER, yb);
+    const h = Math.abs(yb - ya), lo = Math.min(ya, yb), hi = Math.max(ya, yb);
+    if (h >= 7) { ln(xLine, lo, xLine, hi); arrowHead(xLine, lo, 0, -1, o.c); arrowHead(xLine, hi, 0, 1, o.c); }
+    else { ln(xLine, lo - 5, xLine, hi + 5); arrowHead(xLine, lo, 0, 1, o.c); arrowHead(xLine, hi, 0, -1, o.c); }
+    const ty = o.ty != null ? o.ty : (h >= Math.max(7, String(label).length * 1.35) ? (lo + hi) / 2 : lo - 2 - String(label).length * 0.7);
+    txt(label, xLine - 0.9, ty, { align: 'center', angle: 90, size: o.size || 7, color: o.c || INK, bold: o.bold });
+  }
+  // a leader from (x,y) to a note at (tx,ty); the shoulder runs toward the text
+  function leader(x, y, tx, ty, lines, o = {}) {
+    pen(THIN, o.c || INK);
+    const right = tx >= x;
+    ln(x, y, tx + (right ? -2 : 2), ty);
+    ln(tx + (right ? -2 : 2), ty, tx, ty);
+    if (o.dot) dot(x, y, 0.55, o.c || INK); else arrowHead(x, y, (x - tx) / Math.hypot(x - tx, y - ty), (y - ty) / Math.hypot(x - tx, y - ty), o.c || INK);
+    const L = Array.isArray(lines) ? lines : [lines];
+    L.forEach((s, i) => txt(s, tx + (right ? 0.8 : -0.8), ty + 1.1 + i * 3, { align: right ? 'left' : 'right', size: o.size || 7, bold: i === 0 && o.bold, color: o.tc || INK }));
+  }
+  function balloon(n, x, y, px, py) {
+    pen(THIN);
+    ln(px, py, x, y);
+    dot(px, py, 0.5);
+    fill([255, 255, 255]);
+    pen(MED);
+    doc.circle(x, y, 3.2, 'FD');
+    txt(n, x, y + 1.15, { align: 'center', size: 7.5, bold: true });
+  }
+  const centreLineH = (x0, x1, y) => { pen(THIN, CL, [5, 1, 1, 1]); ln(x0, y, x1, y); pen(THIN); };
+  const centreLineV = (x, y0, y1) => { pen(THIN, CL, [5, 1, 1, 1]); ln(x, y0, x, y1); pen(THIN); };
+  const crossMark = (x, y, r) => { centreLineH(x - r - 2, x + r + 2, y); centreLineV(x, y - r - 2, y + r + 2); };
+  function viewTitle(x, y, title, scale, sub) {
+    txt(title, x, y, { size: 9.5, bold: true, align: 'center' });
+    pen(MED); ln(x - doc.getTextWidth(title) / 2, y + 1.2, x + doc.getTextWidth(title) / 2, y + 1.2);
+    txt(`SCALE ${scale}${sub ? '  ·  ' + sub : ''}`, x, y + 4.6, { size: 6.5, align: 'center', color: CL });
+  }
+  function sectionMark(x, y, letter, dir) { // dir: arrow direction (dx, dy) for the viewing direction
+    pen(MED); fill([255, 255, 255]); doc.circle(x, y, 2.8, 'FD');
+    txt(letter, x, y + 1.1, { align: 'center', size: 7, bold: true });
+    pen(THICK); ln(x + dir[0] * 2.8, y + dir[1] * 2.8, x + dir[0] * 8, y + dir[1] * 8); arrowHead(x + dir[0] * 9, y + dir[1] * 9, dir[0], dir[1]);
+  }
+  function weldSymbol(x, y, tx, ty, size, allRound = true, o = {}) {
+    // arrow to the joint, reference line, fillet triangle below the line (arrow side), all-round circle
+    pen(THIN, o.c || INK);
+    ln(x, y, tx, ty);
+    arrowHead(x, y, (x - tx) / Math.hypot(x - tx, y - ty), (y - ty) / Math.hypot(x - tx, y - ty), o.c || INK);
+    const L = 16, dirx = tx >= x ? 1 : -1;
+    ln(tx, ty, tx + dirx * L, ty);
+    if (allRound) { doc.circle(tx, ty, 1.1, 'S'); }
+    const fx = tx + dirx * 5;
+    poly([[fx, ty], [fx, ty + 2.4], [fx + dirx * 2.4, ty]], true);
+    txt(size, fx - dirx * 1.2, ty + 2.6, { size: 6.5, align: dirx > 0 ? 'right' : 'left' });
+    if (o.note) txt(o.note, tx + dirx * (L + 1), ty + 1, { size: 6.5, align: dirx > 0 ? 'left' : 'right', color: o.c || INK, bold: !!o.bold });
+  }
+
+  // ---------- sheet frame and title block ----------
+  function sheet(n) {
+    if (n > 1) doc.addPage('a3', 'landscape');
+    pen(0.7); doc.rect(10, 10, PW - 20, PH - 20);
+    pen(THIN); doc.rect(7, 7, PW - 14, PH - 14);
+    // zone markers
+    const cols = 8, rows = 6;
+    for (let i = 0; i < cols; i++) {
+      const x = 10 + ((PW - 20) * (i + 0.5)) / cols;
+      txt(i + 1, x, 9.3, { align: 'center', size: 6, color: CL }); txt(i + 1, x, PH - 7.7, { align: 'center', size: 6, color: CL });
+      if (i) { pen(THIN); const xx = 10 + ((PW - 20) * i) / cols; ln(xx, 7, xx, 10); ln(xx, PH - 10, xx, PH - 7); }
+    }
+    for (let i = 0; i < rows; i++) {
+      const y = 10 + ((PH - 20) * (i + 0.5)) / rows, L = 'ABCDEF'[i];
+      txt(L, 8.5, y + 1, { align: 'center', size: 6, color: CL }); txt(L, PW - 8.5, y + 1, { align: 'center', size: 6, color: CL });
+      if (i) { pen(THIN); const yy = 10 + ((PH - 20) * i) / rows; ln(7, yy, 10, yy); ln(PW - 10, yy, PW - 7, yy); }
+    }
+    // title block
+    const x0 = 262, y0 = 250, x1 = PW - 10, y1 = PH - 10;
+    pen(MED); fill([255, 255, 255]); doc.rect(x0, y0, x1 - x0, y1 - y0, 'FD');
+    pen(THIN);
+    ln(x0, y0 + 13, x1, y0 + 13); ln(x0, y0 + 25, x1, y0 + 25);
+    ln(x0 + 74, y0 + 13, x0 + 74, y1); ln(x0 + 111, y0 + 13, x0 + 111, y1);
+    txt('BREW NOOK  ·  ROLLER SHUTTER U-FRAME', x0 + 3, y0 + 5.3, { size: 10, bold: true });
+    txt(SHEETS[n - 1], x0 + 3, y0 + 10.5, { size: 7.5, bold: true, color: ACC });
+    const cell = (x, y, k, v, o = {}) => { txt(k, x + 2, y + 3.2, { size: 5.2, color: CL }); txt(v, x + 2, y + 8.6, { size: o.size || 7.5, bold: o.bold }); };
+    cell(x0, y0 + 13, 'MATERIAL', '316 STAINLESS');
+    cell(x0 + 37, y0 + 13, 'FINISH', black ? 'POWDER COAT BLACK' : 'BARE 316', { size: 7 });
+    cell(x0 + 74, y0 + 13, 'UNITS', 'mm');
+    cell(x0 + 111, y0 + 13, 'SHEET', `${n} OF ${SHEETS.length}`, { bold: true });
+    cell(x0, y0 + 25, 'DRAWN', 'Brew Nook Planner');
+    cell(x0 + 37, y0 + 25, 'DATE', D.date);
+    cell(x0 + 74, y0 + 25, 'PROJECTION', '');
+    cell(x0 + 111, y0 + 25, 'SIZE / REV', 'A3  ·  A');
+    // third-angle projection symbol
+    const sx = x0 + 88, sy = y0 + 31.5;
+    pen(THIN); doc.circle(sx + 9, sy, 2.2); doc.circle(sx + 9, sy, 1);
+    poly([[sx, sy - 2.2], [sx + 5, sy - 1], [sx + 5, sy + 1], [sx, sy + 2.2]], true);
+    centreLineH(sx - 1, sx + 12.5, sy);
+    pen(THIN); ln(x0 - 2, y0 - 2, x0 - 2, y0 - 2);
+    // general tolerance strip above the title block
+    txt('UNLESS NOTED: DIMENSIONS IN mm  ·  LINEAR ±1  ·  HOLE CENTRES ±0.5  ·  ANGLES ±0.5°  ·  BREAK SHARP EDGES', x0, y0 - 2, { size: 5.6, color: CL });
+  }
+
+  // =====================================================================================
+  // SHEET 1: GENERAL ARRANGEMENT
+  // =====================================================================================
+  sheet(1);
+  const s1 = 0.08; // 1:12.5
+  const E = view(62, 246, s1);
+  const Wd = D.width, top = D.top, bH = D.beam.h, pt = D.plateT;
+  const yL0 = D.slabStepL; // left slab is higher by this much
+  const LL = D.leftLeg, RL = D.rightLeg;
+  // ceiling, slab and walls (context, thin)
+  pen(THIN, CL, [2, 1]);
+  ln(E.X(-120), E.Y(D.ceiling.plaster), E.X(Wd + 30), E.Y(D.ceiling.plaster));
+  txt('U/S PLASTERBOARD', E.X(-122), E.Y(D.ceiling.plaster) - 1, { size: 5.5, color: CL, align: 'right' });
+  ln(E.X(-120), E.Y(top), E.X(-30), E.Y(top));
+  txt('U/S WEATHERBOARD LIP', E.X(-122), E.Y(top) + 2.6, { size: 5.5, color: CL, align: 'right' });
+  pen(MED, CL);
+  ln(E.X(-120), E.Y(yL0), E.X(Wd + 60), E.Y(0));
+  txt('SLAB (FALLS ' + f1(yL0) + ' TO BRICK)', E.X(-122), E.Y(yL0) + 0.8, { size: 5.5, color: CL, align: 'right' });
+  hatch(E.X(Wd), E.Y(D.ceiling.plaster), E.X(Wd) + 3, E.Y(0), 1.6, CL);
+  txt('BRICK', E.X(Wd) + 4.5, E.Y(1300), { size: 5.5, color: CL, angle: 90 });
+  // members
+  pen(THICK);
+  fill(black ? [70, 70, 74] : [210, 212, 215]);
+  vrect(E, LL.x0, yL0 + pt, LL.x1, top - bH, 'S');
+  vrect(E, RL.x0, pt, RL.x1, top - bH, 'S');
+  vrect(E, 0, top - bH, Wd, top, 'S');
+  vrect(E, D.plates.left.x0, yL0, D.plates.left.x1, yL0 + pt, 'S');
+  vrect(E, D.plates.right.x0, 0, D.plates.right.x1, pt, 'S');
+  // inside face of RHS walls (hidden on this view: the leg is viewed from inside, so show inner walls dashed)
+  pen(THIN, INK, [1.5, 0.8]);
+  ln(E.X(LL.x0 + 3), E.Y(yL0 + pt), E.X(LL.x0 + 3), E.Y(top - bH)); ln(E.X(LL.x1 - 3), E.Y(yL0 + pt), E.X(LL.x1 - 3), E.Y(top - bH));
+  ln(E.X(RL.x0 + 3), E.Y(pt), E.X(RL.x0 + 3), E.Y(top - bH)); ln(E.X(RL.x1 - 3), E.Y(pt), E.X(RL.x1 - 3), E.Y(top - bH));
+  // tabs seen from inside: 45 wide, rising to the plasterboard behind the beam's top edge
+  pen(MED);
+  for (const t of D.tabs.list) {
+    vrect(E, t.x - D.tabs.w / 2, top, t.x + D.tabs.w / 2, D.ceiling.plaster, 'S');
+    centreLineV(E.X(t.x), E.Y(D.ceiling.plaster) - 2, E.Y(top - bH) + 2);
+  }
+  // pass-throughs: inside ferrule flanges
+  for (const y of D.pass.ys) { pen(MED); doc.circle(E.X(D.pass.x), E.Y(y), (D.pass.flangeOD / 2) * s1); crossMark(E.X(D.pass.x), E.Y(y), (D.pass.flangeOD / 2) * s1); }
+  // dimensions
+  dimH(E.X(0), E.X(Wd), E.Y(D.ceiling.plaster) - 13, E.Y(top), E.Y(top), `${f1(Wd)} OVERALL (TOP BEAM)`, { bold: true });
+  // tab chain from the brick face
+  {
+    const yl = E.Y(D.ceiling.plaster) - 4.5;
+    const xs = [...D.tabs.list.map((t) => t.x)].sort((a, b) => a - b);
+    let prev = Wd;
+    for (const x of xs.slice().reverse()) {
+      dimH(E.X(x), E.X(prev), yl, E.Y(D.ceiling.plaster), prev === Wd ? E.Y(top) : E.Y(D.ceiling.plaster), f1(prev - x), { size: 6.5 });
+      prev = x;
+    }
+    dimH(E.X(0), E.X(xs[0]), yl, E.Y(top), E.Y(D.ceiling.plaster), f1(xs[0]), { size: 6.5 });
+    txt('CEILING TAB CENTRELINES = JOIST CENTRELINES, FROM THE BRICK FACE: ' + D.tabs.list.map((t) => t.fromBrick).join(' / '), E.X(Wd / 2), E.Y(top - bH) + 5, { size: 6, align: 'center', color: BLUE });
+  }
+  dimH(E.X(LL.x0), E.X(LL.x1), E.Y(900), null, null, f1(LL.w), { size: 6.5 });
+  dimH(E.X(RL.x0), E.X(RL.x1), E.Y(900), null, null, f1(RL.w), { size: 6.5 });
+  pen(THIN); ln(E.X(LL.x0), E.Y(900) - 1.5, E.X(LL.x0), E.Y(900) + 1.5); ln(E.X(LL.x1), E.Y(900) - 1.5, E.X(LL.x1), E.Y(900) + 1.5);
+  ln(E.X(RL.x0), E.Y(900) - 1.5, E.X(RL.x0), E.Y(900) + 1.5); ln(E.X(RL.x1), E.Y(900) - 1.5, E.X(RL.x1), E.Y(900) + 1.5);
+  dimV(E.Y(0), E.Y(top), E.X(Wd) + 13, E.X(Wd), E.X(Wd), `${f0(RL.height)} RIGHT LEG, SLAB TO TOP OF U`, { bold: true });
+  dimV(E.Y(yL0), E.Y(top), E.X(D.plates.left.x0) - 10, E.X(LL.x0), E.X(0), `${f0(LL.height)} LEFT LEG, SLAB TO TOP OF U`, { bold: true });
+  dimV(E.Y(top - bH), E.Y(top), E.X(Wd) + 6, E.X(Wd), E.X(Wd), f1(bH), { size: 6.5, ty: E.Y(top - bH) + 4.5 });
+  dimV(E.Y(top), E.Y(D.ceiling.plaster), E.X(Wd) + 6, null, E.X(Wd), f1(D.ceiling.plaster - top), { size: 6.5 });
+  // balloons
+  balloon(1, E.X(-45), E.Y(1600), E.X(LL.x0 + 25), E.Y(1500));
+  balloon(2, E.X(Wd + 35), E.Y(1700), E.X(RL.x0 + 50), E.Y(1600));
+  balloon(3, E.X(820), E.Y(top - 260), E.X(820), E.Y(top - bH));
+  balloon(4, E.X(-45), E.Y(250), E.X(D.plates.left.x0 + 10), E.Y(yL0 + 4));
+  balloon(5, E.X(Wd + 35), E.Y(330), E.X(RL.x0 + 20), E.Y(4));
+  balloon(6, E.X(D.tabs.list[0].x - 120), E.Y(top - 260), E.X(D.tabs.list[0].x - 10), E.Y(top + 12));
+  balloon(7, E.X(Wd - 200), E.Y(460), E.X(D.pass.x - 6), E.Y(D.pass.ys[2]));
+  sectionMark(E.X(Wd - 50), E.Y(top) - 21, 'A', [1, 0]);
+  sectionMark(E.X(Wd - 50), E.Y(-90), 'A', [1, 0]);
+  pen(THIN, INK, [4, 1, 1, 1]); ln(E.X(Wd - 50), E.Y(top) - 18, E.X(Wd - 50), E.Y(-90) - 3);
+  viewTitle(E.X(Wd / 2), 272, 'FRONT ELEVATION, FROM INSIDE THE NOOK', '1 : 12.5', 'weatherboard left, brick right');
+
+  // section A-A through the right leg (side view; nook to the left, outside to the right)
+  {
+    const S = view(236, 246, s1);
+    const ZX = (zin) => S.X(-zin); // zin: mm inward from the outside face
+    pen(THICK);
+    doc.rect(ZX(50), S.Y(top - bH), 50 * s1, (top - bH - pt) * s1);
+    hatch(ZX(50), S.Y(top), ZX(0), S.Y(top - bH), 0.9);
+    pen(THICK); doc.rect(ZX(50), S.Y(top), 50 * s1, bH * s1);
+    doc.rect(ZX(110), S.Y(pt), 110 * s1, pt * s1);
+    // tab profile
+    pen(MED);
+    const tz0 = 50 - D.tabs.weld;
+    poly(D.tabs.profile.map(([u, v]) => [ZX(tz0 + u), S.Y(top + v)]));
+    // pipes
+    for (const y of D.pass.ys) { pen(MED); ln(ZX(50 + D.pass.inside), S.Y(y), ZX(-D.pass.outside), S.Y(y)); }
+    pen(THIN, CL, [2, 1]); ln(ZX(220), S.Y(D.ceiling.plaster), ZX(-60), S.Y(D.ceiling.plaster)); ln(ZX(220), S.Y(0), ZX(-60), S.Y(0));
+    dimH(ZX(50), ZX(0), S.Y(top) - 14, S.Y(top), S.Y(top), '50', { size: 6.5 });
+    dimH(ZX(110), ZX(50), S.Y(-14), S.Y(0), S.Y(0), '60', { size: 6.5 });
+    txt('NOOK', ZX(150), S.Y(1300), { size: 6.5, color: CL, align: 'center' });
+    txt('OUTSIDE', ZX(-45), S.Y(1300), { size: 6.5, color: CL, align: 'center', angle: 90 });
+    viewTitle(S.X(-20), 272, 'SECTION A–A', '1 : 12.5', 'through leg 2');
+  }
+
+  // parts list
+  {
+    const x0 = 262, y0 = 16, cw = [9, 70, 49, 10];
+    const rows = [
+      ['1', 'Left leg, 50 × 50 × 3 SHS', `${f0(LL.cut)} long`, '1'],
+      ['2', 'Right leg, 100 × 50 × 3 RHS', `${f0(RL.cut)} long`, '1'],
+      ['3', 'Top beam, 50 × 25 × 3 RHS', `${f1(Wd)} long`, '1'],
+      ['4', 'Base plate L, 8 thk', `${f1(D.plates.left.x1 - D.plates.left.x0)} × 110, notched`, '1'],
+      ['5', 'Base plate R, 8 thk', `${f1(RL.w)} × 110`, '1'],
+      ['6', 'Ceiling tab, 3 thk, S-bent', `${D.tabs.w} × ${D.tabs.l}`, String(D.tabs.list.length)],
+      ['7', 'Pass-through tube Ø38.1 × 1.65', `${f1(D.pass.tube)} long`, '3'],
+      ['8', '1.5" TC weld ferrule (21.5 long)', 'standard', '6'],
+      ['9', 'M6 rivnut, 316, flanged', 'fit after coating', String(D.rivnuts.L.ys.length + D.rivnuts.R.ys.length)],
+      ['10', 'M10 anchor, 316 (by installer)', '80 embed', '4'],
+      ['11', '14g × 100 batten screw, 316 (inst.)', 'into joists', String(D.tabs.list.length * 2)],
+    ];
+    pen(MED); doc.rect(x0, y0, cw.reduce((a, b) => a + b), 7 + rows.length * 5.6);
+    fill(SOFT); doc.rect(x0, y0, cw.reduce((a, b) => a + b), 7, 'F'); pen(MED); doc.rect(x0, y0, cw.reduce((a, b) => a + b), 7);
+    let x = x0;
+    ['ITEM', 'DESCRIPTION  (ALL 316 STAINLESS)', 'SIZE', 'QTY'].forEach((h, i) => { txt(h, x + 1.5, y0 + 4.8, { size: 6, bold: true }); x += cw[i]; });
+    rows.forEach((r, ri) => {
+      const yy = y0 + 7 + ri * 5.6;
+      pen(THIN); ln(x0, yy, x0 + cw.reduce((a, b) => a + b), yy);
+      let xx = x0;
+      r.forEach((c, i) => { txt(c, xx + 1.5, yy + 4, { size: 6.5, bold: i === 0 }); xx += cw[i]; });
+    });
+    x = x0; pen(THIN); for (let i = 0; i < cw.length - 1; i++) { x += cw[i]; ln(x, y0, x, y0 + 7 + rows.length * 5.6); }
+    txt('PARTS LIST', x0, y0 - 1.8, { size: 8, bold: true });
+  }
+  // general notes
+  {
+    const x0 = 262, y0 = 101;
+    txt('GENERAL NOTES', x0, y0, { size: 8, bold: true });
+    const notes = [
+      `1. All members 316 stainless. Legs and beam welded into one inverted U, ${f1(Wd)} wide.`,
+      `2. Heights are measured from the slab at each leg; the slab falls ${f1(yL0)} from left to right.`,
+      '   Cut legs to suit: the TOP OF THE U must be level and butt the weatherboard lip.',
+      '3. Top beam sits on the legs; seal-weld all round (no open ends).',
+      `4. Ceiling tabs: 3 thk, S-bent ${D.tabs.rise} rise over ${D.tabs.s}, flat ${D.tabs.l - D.tabs.s}. Weld to the`,
+      `   beam's inside top edge (${D.tabs.weld} lap) on the joist centrelines. See sheet 2.`,
+      '5. Pass-throughs (3 off, right leg): see sheet 2 and the sequence on sheet 4.',
+      '   Tubes are welded in AFTER powder coating, inside bare masked rings.',
+      `6. Finish: ${black ? 'blast, stainless primer, black powder coat. Ferrules, tube stubs' : 'bare 316, pickled and passivated.'}`,
+      black ? '   and bores stay bare stainless (not coated).' : '',
+      '7. M6 rivnuts on the outside faces carry the shutter side frames (sheet 3).',
+      '8. Seal-welded hollow sections: add vent holes if the coater asks; plug after.',
+      '9. Nothing is fixed into either wall. Fixings: slab anchors and joist screws only.',
+    ].filter(Boolean);
+    notes.forEach((s, i) => txt(s, x0, y0 + 5 + i * 3.6, { size: 6.4 }));
+  }
+  // key plan: where the U sits in the nook
+  {
+    const x0 = 268, y0 = 162, k = 0.022;
+    txt('KEY PLAN', x0 - 6, y0 - 4, { size: 8, bold: true });
+    pen(THIN, CL);
+    const nw = D.openingW * k, nd = 3130 * k;
+    doc.rect(x0, y0, nw, nd * 0.75);
+    txt('NOOK', x0 + nw / 2, y0 + nd * 0.35, { size: 6, align: 'center', color: CL });
+    hatch(x0 + nw, y0, x0 + nw + 1.5, y0 + nd * 0.75 + 8, 0.8, CL);
+    pen(THICK, ACC); ln(x0 + (D.openingW - Wd) * k, y0 + nd * 0.75, x0 + nw, y0 + nd * 0.75);
+    txt('U-FRAME', x0 + nw + 4, y0 + nd * 0.75 + 1, { size: 6.5, bold: true, color: ACC });
+    txt('BRICK', x0 + nw + 3, y0 + 8, { size: 5.5, color: CL });
+    txt('WEATHERBOARD', x0 - 1.5, y0 + 20, { size: 5.5, color: CL, angle: 90 });
+    txt('OPENING / SHUTTER', x0 + nw / 2, y0 + nd * 0.75 + 6, { size: 6, align: 'center', color: CL });
+    txt('(not to scale)', x0 + nw / 2, y0 + nd * 0.75 + 9.5, { size: 5.5, align: 'center', color: CL });
+  }
+
+  // =====================================================================================
+  // SHEET 2: DETAILS
+  // =====================================================================================
+  sheet(2);
+  // ----- DETAIL A: right leg, outside face, bottom 300 (1:2.5) -----
+  {
+    const s = 0.4, A = view(52, 128, s);
+    const X = (x) => A.X(x); // local: 0 = opening-side edge of the right leg, 100 = brick face
+    const hTop = 250;
+    pen(THICK); fill(black ? [86, 86, 90] : [225, 226, 228]);
+    doc.rect(X(0), A.Y(hTop), RL.w * s, (hTop - pt) * s, 'S');
+    doc.rect(X(0), A.Y(pt), RL.w * s, pt * s, 'S');
+    pen(THIN, INK, [3, 1.2, 0.6, 1.2]); ln(X(0) - 2, A.Y(hTop) + 0.3, X(RL.w) + 2, A.Y(hTop) + 0.3); // break line
+    // frame overlap zone
+    fill([250, 228, 210]); doc.rect(X(0), A.Y(hTop), D.pass.overlap * s, (hTop - pt) * s, 'F');
+    hatch(X(0), A.Y(hTop), X(D.pass.overlap), A.Y(pt), 2.2, ACC);
+    pen(THICK); doc.rect(X(0), A.Y(hTop), RL.w * s, (hTop - pt) * s, 'S');
+    txt('SIDE FRAME OVERLAP: KEEP FLAT', X(D.pass.overlap / 2) + 1, A.Y(hTop * 0.62), { size: 6, align: 'center', bold: true, color: ACC, angle: 90 });
+    // bare rings and holes
+    for (const y of D.pass.ys) {
+      const cx = X(RL.w - D.pass.fromBrick), cy = A.Y(y);
+      if (black) { fill([255, 255, 255]); pen(THIN, BLUE, [1.2, 0.8]); doc.circle(cx, cy, (D.pass.ring / 2) * s, 'FD'); }
+      pen(THICK); fill([255, 255, 255]); doc.circle(cx, cy, (D.pass.hole / 2) * s, 'FD');
+      crossMark(cx, cy, (D.pass.hole / 2) * s);
+    }
+    // rivnut at 100
+    const rv = D.rivnuts.R.ys[0];
+    pen(MED); doc.circle(X(15), A.Y(rv), 4.5 * s); crossMark(X(15), A.Y(rv), 4.5 * s);
+    leader(X(15) - 1.6, A.Y(rv) + 1.6, X(0) - 8, A.Y(rv) + 10, [`Ø9 RIVNUT HOLE (M6)`, 'see sheet 3'], { size: 6 });
+    // dims: x from brick face
+    const cx = X(RL.w - D.pass.fromBrick);
+    dimH(cx, X(RL.w), A.Y(hTop) - 6, A.Y(D.pass.ys[2]), A.Y(hTop), f1(D.pass.fromBrick), { size: 6.5 });
+    dimH(X(0), X(D.pass.overlap), A.Y(hTop) - 6, A.Y(hTop), A.Y(hTop), f1(D.pass.overlap), { size: 6.5 });
+    dimH(X(0), X(RL.w), A.Y(hTop) - 12, A.Y(hTop), A.Y(hTop), f1(RL.w), { size: 6.5 });
+    let xl = X(RL.w) + 8;
+    for (const y of D.pass.ys) { dimV(A.Y(0), A.Y(y), xl, X(RL.w), cx + 2, f1(y), { size: 6.5 }); xl += 7; }
+    dimV(A.Y(D.pass.ys[0]), A.Y(D.pass.ys[1]), cx - 14, null, null, f1(D.pass.ys[1] - D.pass.ys[0]), { size: 6.5 });
+    leader(cx - (D.pass.hole / 2) * s * 0.7, A.Y(D.pass.ys[2]) - (D.pass.hole / 2) * s * 0.7, X(0) - 8, A.Y(D.pass.ys[2]) - 22, [`3 × Ø${f1(D.pass.hole)} THRU BOTH WALLS`, 'for the Ø38.1 tubes'], { size: 6, bold: true });
+    if (black) leader(cx - (D.pass.ring / 2) * s * 0.7, A.Y(D.pass.ys[1]) - (D.pass.ring / 2) * s * 0.7, X(0) - 8, A.Y(D.pass.ys[1]) - 10, [`Ø${D.pass.ring} BARE RING`, 'BOTH FACES,', 'MASK BEFORE', 'COATING'], { size: 6, bold: true, c: BLUE, tc: BLUE });
+    pen(MED, CL); ln(X(-30), A.Y(0), X(RL.w + 30), A.Y(0)); txt('SLAB', X(-30), A.Y(0) + 3, { size: 5.5, color: CL });
+    txt('BRICK SIDE', X(RL.w) - 1, A.Y(hTop) + 4, { size: 5.5, color: CL, align: 'right' });
+    viewTitle(X(50) + 6, 146, 'DETAIL A: RIGHT LEG, OUTSIDE FACE', '1 : 2.5', 'viewed from outside');
+  }
+  // ----- SECTION B-B through the pass-throughs (1:2.5) -----
+  {
+    const s = 0.4, B = view(214, 128, s);
+    const ZX = (zin) => B.X(-zin); // inward from the outside face to the left
+    const y2 = D.pass.ys[2] + 40;
+    // RHS walls (cut, hatched)
+    pen(THICK);
+    for (const [a, b] of [[50, 47], [3, 0]]) { doc.rect(ZX(a), B.Y(y2), 3 * s, (y2 - pt) * s); hatch(ZX(a), B.Y(y2), ZX(b), B.Y(pt), 0.8); }
+    pen(THIN, INK, [3, 1.2, 0.6, 1.2]); ln(ZX(60), B.Y(y2) + 0.3, ZX(-10), B.Y(y2) + 0.3);
+    // base plate with inside tab and anchor
+    pen(THICK); doc.rect(ZX(110), B.Y(pt), 110 * s, pt * s); hatch(ZX(110), B.Y(pt), ZX(0), B.Y(0), 0.8);
+    centreLineV(ZX(50 + D.plates.anchorZ), B.Y(pt) - 4, B.Y(0) + 8);
+    pen(MED, CL, [1.2, 0.8]); doc.rect(ZX(50 + D.plates.anchorZ + 6), B.Y(0) - 0.01, 12 * s, 80 * s * 0.25);
+    // tubes + ferrules
+    const fl = D.pass.ferrule, flt = 2.85;
+    for (const y of D.pass.ys) {
+      const r = D.pass.od / 2, rf = D.pass.flangeOD / 2;
+      const zin0 = 50 + D.pass.inside, zout = -D.pass.outside;
+      pen(MED);
+      // tube body (between ferrule tails)
+      ln(ZX(zin0), B.Y(y + r), ZX(zout), B.Y(y + r)); ln(ZX(zin0), B.Y(y - r), ZX(zout), B.Y(y - r));
+      // flanges
+      fill([255, 255, 255]);
+      for (const [zf, dir] of [[zin0, 1], [zout, -1]]) {
+        doc.rect(Math.min(ZX(zf), ZX(zf - dir * flt)), B.Y(y + rf), flt * s, rf * 2 * s, 'FD');
+        pen(THIN); ln(ZX(zf - dir * fl), B.Y(y + r) - 0.6, ZX(zf - dir * fl), B.Y(y - r) + 0.6); pen(MED); // ferrule-to-tube butt weld line
+      }
+      centreLineH(ZX(zin0) - 3, ZX(zout) + 3, B.Y(y));
+    }
+    // dimension the top tube
+    const yt = D.pass.ys[2], rf = D.pass.flangeOD / 2;
+    const yd = B.Y(y2) - 5;
+    dimH(ZX(50 + D.pass.inside), ZX(50), yd, B.Y(yt + rf), B.Y(y2), f1(D.pass.inside), { size: 6.5 });
+    dimH(ZX(50), ZX(0), yd, B.Y(y2), B.Y(y2), '50', { size: 6.5 });
+    dimH(ZX(0), ZX(-D.pass.outside), yd, B.Y(y2), B.Y(yt + rf), f1(D.pass.outside), { size: 6.5 });
+    dimH(ZX(50 + D.pass.inside), ZX(-D.pass.outside), yd - 7, yd, yd, `${f1(D.pass.total)} FLANGE FACE TO FLANGE FACE`, { size: 6.5, bold: true });
+    // tube length between ferrules
+    const yb = D.pass.ys[0];
+    const ym1 = (D.pass.ys[0] + D.pass.ys[1]) / 2, ym2 = (D.pass.ys[1] + D.pass.ys[2]) / 2;
+    dimH(ZX(50 + D.pass.inside - fl), ZX(-D.pass.outside + fl), B.Y(ym1), B.Y(yb - D.pass.od / 2), B.Y(yb - D.pass.od / 2), `${f1(D.pass.tube)} TUBE (ITEM 7)`, { size: 6.5, tx: ZX(25) });
+    dimH(ZX(50 + D.pass.inside), ZX(50 + D.pass.inside - fl), B.Y(ym2), null, null, '21.5 FERRULE', { size: 6, tx: ZX(50 + D.pass.inside) - 9 });
+    dimH(ZX(50), ZX(50 + D.plates.anchorZ), B.Y(0) + 6, B.Y(0), B.Y(0), f1(D.plates.anchorZ), { size: 6.5 });
+    dimH(ZX(110), ZX(50), B.Y(0) + 12, B.Y(0), B.Y(0), '60', { size: 6.5 });
+    dimV(B.Y(0), B.Y(pt), ZX(110) - 4, ZX(110), ZX(110), '8', { size: 6.5 });
+    // frame and clamp envelopes (phantom)
+    pen(THIN, ACC, [4, 1, 1, 1, 1, 1]);
+    doc.rect(ZX(0), B.Y(y2), D.pass.frameD * s, (y2 - pt) * s);
+    const jz = -D.pass.outside - 0.6;
+    for (const y of D.pass.ys) doc.rect(ZX(jz + D.pass.clampW / 2), B.Y(y + D.pass.clampOD / 2), D.pass.clampW * s, D.pass.clampOD * s);
+    txt(`SIDE FRAME, ${f1(D.pass.frameD)} DEEP (PHANTOM)`, ZX(-D.pass.frameD / 2) + 1.5, B.Y(pt) + 6.5, { size: 5.8, align: 'center', color: ACC, bold: true });
+    const clr = D.pass.outside + 0.6 - D.pass.clampW / 2 - D.pass.frameD;
+    dimH(ZX(-D.pass.frameD), ZX(jz + D.pass.clampW / 2), B.Y(D.pass.ys[1]) + 1.5, null, null, f1(clr), { size: 6, c: ACC });
+    txt('CLAMP CLEAR OF FRAME', ZX(-D.pass.outside) + 9, B.Y(D.pass.ys[1]) + 7, { size: 5.5, color: ACC });
+    // weld symbols
+    weldSymbol(ZX(48.5), B.Y(D.pass.ys[2] - D.pass.od / 2 - 3), ZX(90), B.Y(ym2) + 2, '2', true, { note: 'WELD 2 (AFTER COAT)', c: BLUE, bold: true });
+    weldSymbol(ZX(1.5), B.Y(D.pass.ys[1] - D.pass.od / 2), ZX(1.5) + 26, B.Y(D.pass.ys[0]) + 22, '2', true, { note: 'WELD 2 (AFTER COAT)', c: BLUE, bold: true });
+    txt('NOOK', ZX(95), B.Y(y2) + 4, { size: 6, color: CL, align: 'center' });
+    txt('OUTSIDE', ZX(-58), B.Y(y2) + 4, { size: 6, color: CL, align: 'center' });
+    viewTitle(ZX(30), 146, 'SECTION B–B: PASS-THROUGHS', '1 : 2.5', 'through the tube centreline');
+  }
+  // ----- DETAIL C: base plates (plan, 1:2.5) -----
+  {
+    const s = 0.4;
+    // left plate: local X from the plate's left edge (2 mm off the weatherboard); Z inward from the outside face
+    const pl = D.plates.left, pr = D.plates.right;
+    const C1 = view(40, 168, s);
+    const PX = (x) => C1.X(x - pl.x0), PZ = (z) => 168 + z * s;
+    pen(THICK); fill(black ? [86, 86, 90] : [225, 226, 228]);
+    poly([[PX(pl.x0), PZ(pl.notchZ)], [PX(LL.x0), PZ(pl.notchZ)], [PX(LL.x0), PZ(0)], [PX(pl.x1), PZ(0)], [PX(pl.x1), PZ(110)], [PX(pl.x0), PZ(110)]], true, 'FD');
+    pen(MED, INK, [1.5, 0.8]); doc.rect(PX(LL.x0), PZ(0), 50 * s, 50 * s);
+    txt('LEG 1', PX(LL.x0 + 25), PZ(26), { size: 6, align: 'center' });
+    for (const x of pl.holes) { pen(THICK); fill([255, 255, 255]); doc.circle(PX(x), PZ(50 + D.plates.anchorZ), 6 * s, 'FD'); crossMark(PX(x), PZ(50 + D.plates.anchorZ), 6 * s); }
+    dimH(PX(pl.x0), PX(pl.x1), PZ(0) - 12, PZ(pl.notchZ), PZ(0), f1(pl.x1 - pl.x0), { size: 6.5 });
+    dimH(PX(pl.x0), PX(LL.x0), PZ(0) - 5, PZ(pl.notchZ), PZ(0), f1(LL.x0 - pl.x0), { size: 6.5 });
+    dimV(PZ(0), PZ(pl.notchZ), PX(pl.x0) - 5, PX(LL.x0), PX(pl.x0), f1(pl.notchZ), { size: 6.5 });
+    dimV(PZ(0), PZ(110), PX(pl.x1) + 6, PX(pl.x1), PX(pl.x1), '110', { size: 6.5 });
+    dimV(PZ(0), PZ(50 + D.plates.anchorZ), PX(pl.x1) + 13, PX(pl.x1), PX(pl.holes[1]) + 3, f1(50 + D.plates.anchorZ), { size: 6.5 });
+    dimH(PX(pl.x0), PX(pl.holes[0]), PZ(110) + 6, PZ(110), PZ(50 + D.plates.anchorZ) + 3, f1(pl.holes[0] - pl.x0), { size: 6.5 });
+    dimH(PX(pl.holes[1]), PX(pl.x1), PZ(110) + 6, PZ(50 + D.plates.anchorZ) + 3, PZ(110), f1(pl.x1 - pl.holes[1]), { size: 6.5 });
+    txt('NOTCH CLEARS THE WHITE WALL STEP', PX(pl.x0) - 2, PZ(-17), { size: 5.5, color: CL });
+    txt('ITEM 4: LEFT BASE PLATE, 8 THK', PX((pl.x0 + pl.x1) / 2), PZ(110) + 16, { size: 7, bold: true, align: 'center' });
+    txt('2 × Ø12 FOR M10 ANCHORS', PX((pl.x0 + pl.x1) / 2), PZ(110) + 19.5, { size: 6, align: 'center' });
+    txt('WEATHERBOARD', PX(pl.x0), PZ(60), { size: 5.5, color: CL, align: 'right', angle: 90 });
+    // right plate
+    const C2 = view(102, 168, s);
+    const QX = (x) => C2.X(x - pr.x0);
+    pen(THICK); fill(black ? [86, 86, 90] : [225, 226, 228]); doc.rect(QX(pr.x0), PZ(0), (pr.x1 - pr.x0) * s, 110 * s, 'FD');
+    pen(MED, INK, [1.5, 0.8]); doc.rect(QX(RL.x0), PZ(0), RL.w * s, 50 * s);
+    txt('LEG 2', QX(RL.x0 + 50), PZ(26), { size: 6, align: 'center' });
+    for (const x of pr.holes) { pen(THICK); fill([255, 255, 255]); doc.circle(QX(x), PZ(50 + D.plates.anchorZ), 6 * s, 'FD'); crossMark(QX(x), PZ(50 + D.plates.anchorZ), 6 * s); }
+    dimH(QX(pr.x0), QX(pr.x1), PZ(0) - 6, PZ(0), PZ(0), f1(pr.x1 - pr.x0), { size: 6.5 });
+    dimV(PZ(0), PZ(110), QX(pr.x1) + 6, QX(pr.x1), QX(pr.x1), '110', { size: 6.5 });
+    dimV(PZ(0), PZ(50 + D.plates.anchorZ), QX(pr.x1) + 13, QX(pr.x1), QX(pr.holes[1]) + 3, f1(50 + D.plates.anchorZ), { size: 6.5 });
+    dimH(QX(pr.x0), QX(pr.holes[0]), PZ(110) + 6, PZ(110), PZ(50 + D.plates.anchorZ) + 3, f1(pr.holes[0] - pr.x0), { size: 6.5 });
+    dimH(QX(pr.holes[1]), QX(pr.x1), PZ(110) + 6, PZ(50 + D.plates.anchorZ) + 3, PZ(110), f1(pr.x1 - pr.holes[1]), { size: 6.5 });
+    txt('ITEM 5: RIGHT BASE PLATE, 8 THK', QX((pr.x0 + pr.x1) / 2), PZ(110) + 16, { size: 7, bold: true, align: 'center' });
+    txt('2 × Ø12 FOR M10 ANCHORS', QX((pr.x0 + pr.x1) / 2), PZ(110) + 19.5, { size: 6, align: 'center' });
+    txt('BRICK', QX(pr.x1) + 1, PZ(60), { size: 5.5, color: CL, angle: 90 });
+
+    txt(`ALL FOUR ANCHORS ON ONE LINE, ${f1(50 + D.plates.anchorZ)} IN FROM THE OUTSIDE FACE`, 82, PZ(110) + 26, { size: 6.5, bold: true, color: BLUE, align: 'center' });
+    viewTitle(82, 272, 'DETAIL C: BASE PLATES (PLAN)', '1 : 2.5', 'outside face at the top, legs dashed');
+  }
+  // ----- DETAIL D: ceiling tab (1:2) -----
+  {
+    const s = 0.4;
+    const ox = 190, oy = 194; // origin: beam inside face, beam top
+    const ZX = (zin) => ox - (zin - 50) * s; // NOT USED
+    const TX = (u) => ox + u * s; // u: along the tab, from the beam's inside face toward the nook (to the right)
+    const TY = (v) => oy - v * s;
+    const py0 = 235;
+    // beam section (cut), outside face to the left
+    pen(THICK); doc.rect(TX(-50), TY(0), 50 * s, bH * s); hatch(TX(-50), TY(0), TX(0), TY(-bH), 0.9);
+    pen(THIN); doc.rect(TX(-47), TY(-3), 44 * s, (bH - 6) * s, 'S');
+    // tab profile (thickness drawn)
+    const prof = D.tabs.profile.map(([u, v]) => [u - D.tabs.weld, v]);
+    pen(THICK);
+    poly(prof.map(([u, v]) => [TX(u), TY(v)]));
+    poly(prof.map(([u, v]) => [TX(u), TY(v + D.tabs.t)]));
+    ln(TX(prof[0][0]), TY(prof[0][1]), TX(prof[0][0]), TY(prof[0][1] + D.tabs.t));
+    const le = prof[prof.length - 1]; ln(TX(le[0]), TY(le[1]), TX(le[0]), TY(le[1] + D.tabs.t));
+    // plasterboard + joist (context)
+    pen(THIN, CL); doc.rect(TX(-60), TY(D.tabs.rise + D.tabs.t + 13), 220 * s, 13 * s); hatch(TX(-60), TY(D.tabs.rise + D.tabs.t + 13), TX(160), TY(D.tabs.rise + D.tabs.t), 2.4, CL);
+    txt('PLASTERBOARD 13 (JOIST ABOVE)', TX(-60), TY(D.tabs.rise + D.tabs.t + 13) - 1.5, { size: 5.5, color: CL });
+    // screws
+    for (const u of D.tabs.holes) centreLineV(TX(u - D.tabs.weld), TY(D.tabs.rise + D.tabs.t + 20), TY(D.tabs.rise - 6));
+    // dims
+    dimH(TX(prof[0][0]), TX(0), TY(-bH) + 6, TY(0), TY(-bH), f1(D.tabs.weld), { size: 6.5 });
+    dimH(TX(prof[0][0]), TX(le[0]), TY(-bH) + 13, TY(0), TY(le[1]), `${D.tabs.l} TAB LENGTH (FLAT)`, { size: 6.5, bold: true });
+    dimH(TX(prof[0][0]), TX(prof[0][0] + D.tabs.s), TY(D.tabs.rise + D.tabs.t + 13) - 5, TY(D.tabs.t), TY(D.tabs.rise + D.tabs.t), `${D.tabs.s} S-BEND`, { size: 6.5 });
+
+    dimV(TY(0), TY(D.tabs.rise), TX(le[0]) + 6, TX(le[0]), TX(le[0]), `${D.tabs.rise} RISE`, { size: 6.5, bold: true });
+    dimV(TY(D.tabs.rise), TY(D.tabs.rise + D.tabs.t), TX(le[0]) + 13, TX(le[0]), TX(le[0]), f1(D.tabs.t), { size: 6.5 });
+    dimV(TY(-bH), TY(0), TX(-50) - 5, TX(-50), TX(-50), f1(bH), { size: 6.5 });
+    dimH(TX(-50), TX(0), TY(-bH) + 6, TY(-bH), TY(-bH), '50', { size: 6.5 });
+    weldSymbol(TX(prof[0][0] + 1), TY(0), TX(60), TY(-bH) + 21, '3', false, { note: 'WELD 1, BOTH SIDES' });
+    txt('3 + 22 = 7 + 18  (tab + rise = weatherboard lip + trim)', TX(D.tabs.l / 2 - D.tabs.weld), py0 + D.tabs.w * s + 12.5, { size: 6, color: CL, align: 'center' });
+    // tab flat pattern (plan)
+    const FX = (u) => TX(-D.tabs.weld + u);
+    pen(THICK); doc.rect(FX(0), py0, D.tabs.l * s, D.tabs.w * s);
+    centreLineH(FX(0) - 3, FX(D.tabs.l) + 3, py0 + (D.tabs.w / 2) * s);
+    for (const u of D.tabs.holes) { pen(THICK); fill([255, 255, 255]); doc.circle(FX(u), py0 + (D.tabs.w / 2) * s, (D.tabs.holeD / 2) * s, 'FD'); crossMark(FX(u), py0 + (D.tabs.w / 2) * s, (D.tabs.holeD / 2) * s); }
+    pen(THIN, INK, [1.2, 0.8]); ln(FX(D.tabs.weld), py0, FX(D.tabs.weld), py0 + D.tabs.w * s); ln(FX(D.tabs.weld + D.tabs.s), py0, FX(D.tabs.weld + D.tabs.s), py0 + D.tabs.w * s);
+    dimV(py0, py0 + D.tabs.w * s, FX(0) - 5, FX(0), FX(0), f1(D.tabs.w), { size: 6.5 });
+    dimH(FX(0), FX(D.tabs.holes[0]), py0 - 4, py0, py0 + 4, f1(D.tabs.holes[0]), { size: 6.5 });
+    dimH(FX(D.tabs.holes[0]), FX(D.tabs.holes[1]), py0 - 4, py0 + 4, py0 + 4, f1(D.tabs.holes[1] - D.tabs.holes[0]), { size: 6.5 });
+    leader(FX(D.tabs.holes[0]) - 1.5, py0 + (D.tabs.w / 2) * s + 1.5, FX(0) - 4, py0 + D.tabs.w * s + 3, [`2 × Ø${D.tabs.holeD} ON CL`, 'in line with the joist'], { size: 6 });
+    txt('BEND LINES (dashed)', FX(D.tabs.weld + D.tabs.s / 2), py0 + D.tabs.w * s + 4, { size: 5.5, color: CL, align: 'center' });
+    txt(`ITEM 6: CEILING TAB, 3 THK × ${D.tabs.list.length}`, FX(D.tabs.l / 2), py0 + D.tabs.w * s + 8.5, { size: 7, bold: true, align: 'center' });
+    viewTitle(TX(40), 272, 'DETAIL D: CEILING TAB', '1 : 2.5', 'profile (top) and flat pattern; nook to the right');
+    ZX;
+  }
+  // ----- right column: weld legend, corner joint -----
+  {
+    const x0 = 268;
+    txt('WELDS', x0, 22, { size: 8, bold: true });
+    const W1 = [
+      ['WELD 1', 'Frame: legs to base plates, beam to legs, tabs to beam.', 'Full seal fillet all round. Done BEFORE coating.'],
+      ['WELD 2', 'Pass-through tubes to both walls of the right leg.', 'Fillet all round inside the bare rings. Done AFTER coating.'],
+      ['WELD 3', '1.5" ferrules to the tubes (butt). Inside ferrule on the', 'bench before fitting; outside ferrule after the tube is in.'],
+    ];
+    W1.forEach((r, i) => {
+      const y = 29 + i * 13;
+      fill(i === 0 ? SOFT : [228, 238, 252]); pen(THIN); doc.rect(x0, y - 4, 140, 11.5, 'FD');
+      txt(r[0], x0 + 2, y + 0.6, { size: 7.5, bold: true, color: i ? BLUE : INK });
+      txt(r[1], x0 + 20, y, { size: 6.4 }); txt(r[2], x0 + 20, y + 3.8, { size: 6.4, bold: true, color: i ? BLUE : INK });
+    });
+    // corner joint, 1:5
+    const s = 0.2, cx = 300, cy = 112;
+    const K = view(cx, cy, s);
+    pen(THICK); fill(black ? [86, 86, 90] : [225, 226, 228]);
+    vrect(K, 0, -200, 100, 0, 'S'); vrect(K, -60, 0, 100, 25, 'S');
+    pen(THIN, INK, [3, 1.2, 0.6, 1.2]); ln(K.X(-2), K.Y(-200), K.X(102), K.Y(-200)); ln(K.X(-60), K.Y(-2), K.X(-60), K.Y(27));
+    dimV(K.Y(0), K.Y(25), K.X(100) + 5, K.X(100), K.X(100), '25', { size: 6 });
+    weldSymbol(K.X(100), K.Y(0), K.X(100) + 14, K.Y(-40), '3', true, { note: 'WELD 1, SEAL' });
+    txt('BEAM SITS ON THE LEGS, ENDS FLUSH', K.X(20), K.Y(25) - 3, { size: 6, align: 'center' });
+    viewTitle(K.X(20), K.Y(-200) + 9, 'DETAIL E: TOP CORNER (RIGHT)', '1 : 5', 'left corner the same');
+    // general details notes
+    txt('NOTES', x0, 170, { size: 8, bold: true });
+    [
+      '1. Tube 38.1 OD × 1.65 wall, 316. Ferrules: standard 1.5" TC weld ferrules,',
+      '   21.5 long. Flange faces square to the tube within 0.5°.',
+      `2. Flange faces: ${f1(D.pass.inside)} proud inside, ${f1(D.pass.outside)} proud outside, so the outside`,
+      `   clamps sit ${f1((D.pass.outside + 0.6 - D.pass.clampW / 2 - D.pass.frameD))} in front of the ${f1(D.pass.frameD)} deep shutter side frame.`,
+      '3. Ferrules, tube stubs and bores stay bare stainless. No powder in the bores.',
+      '4. Pickle and passivate every weld on stainless that will stay bare.',
+      `5. Ceiling tabs on joist centrelines ${D.tabs.list.map((t) => t.fromBrick).join(' / ')} from the brick face.`,
+      '   Two screws per tab in line along the joist, so the tab only has to land',
+      '   somewhere across the 45 joist.',
+    ].forEach((l, i) => txt(l, x0, 176 + i * 3.7, { size: 6.4 }));
+  }
+
+  // =====================================================================================
+  // SHEET 3: DRILLING, RIVNUTS AND FIXINGS
+  // =====================================================================================
+  sheet(3);
+  {
+    const s = 0.08;
+    // outside faces viewed from outside: brick (right leg) on the LEFT of the page
+    const legs = [
+      { title: 'LEG 2 (RIGHT, AGAINST BRICK)', w: RL.w, h: RL.height, fix: D.rivnuts.R, ox: 70, fixFromEdge: 15, edgeSide: 'right', pass: true },
+      { title: 'LEG 1 (LEFT)', w: LL.w, h: LL.height, fix: D.rivnuts.L, ox: 175, fixFromEdge: 15, edgeSide: 'left', pass: false },
+    ];
+    for (const g of legs) {
+      const V0 = view(g.ox, 250, s);
+      const xEdge = g.edgeSide === 'left' ? 0 : g.w; // the opening-side edge as seen from outside
+      pen(THICK); fill(black ? [86, 86, 90] : [225, 226, 228]);
+      vrect(V0, 0, pt, g.w, g.h - bH, 'S');
+      vrect(V0, -10, g.h - bH, g.w + 10, g.h, 'S');
+      vrect(V0, -20, 0, g.w + 20, pt, 'S');
+      // overlap zone
+      fill([250, 228, 210]); const ox0 = g.edgeSide === 'left' ? 0 : g.w - D.pass.overlap;
+      vrect(V0, ox0, pt, ox0 + D.pass.overlap, g.h - bH, 'F'); pen(THICK); vrect(V0, 0, pt, g.w, g.h - bH, 'S');
+      const fx = g.edgeSide === 'left' ? g.fixFromEdge : g.w - g.fixFromEdge;
+      // rivnuts
+      g.fix.ys.forEach((y, i) => {
+        pen(MED); fill([255, 255, 255]); doc.circle(V0.X(fx), V0.Y(y), 1.0, 'FD');
+        dot(V0.X(fx), V0.Y(y), 0.25);
+        // ordinate dims from the slab, on the outer side
+        const xl = g.edgeSide === 'left' ? V0.X(0) - 8 : V0.X(g.w) + 8;
+        pen(THIN); ln(V0.X(fx) + (g.edgeSide === 'left' ? -1.5 : 1.5), V0.Y(y), xl, V0.Y(y));
+        txt(f0(y), xl + (g.edgeSide === 'left' ? -1 : 1), V0.Y(y) + 1.1, { size: 6.5, align: g.edgeSide === 'left' ? 'right' : 'left', bold: i === 0 || i === g.fix.ys.length - 1 });
+      });
+      const x0l = g.edgeSide === 'left' ? V0.X(0) - 8 : V0.X(g.w) + 8;
+      pen(THIN); ln(x0l, V0.Y(0), V0.X(g.edgeSide === 'left' ? 0 : g.w), V0.Y(0)); txt('0', x0l + (g.edgeSide === 'left' ? -1 : 1), V0.Y(0) + 1.1, { size: 6.5, align: g.edgeSide === 'left' ? 'right' : 'left', bold: true });
+      txt('SLAB', x0l + (g.edgeSide === 'left' ? -6 : 6), V0.Y(0) + 4.5, { size: 5.5, color: CL, align: 'center' });
+      // pass-through holes on the right leg
+      if (g.pass) for (const y of D.pass.ys) { pen(MED); doc.circle(V0.X(D.pass.fromBrick), V0.Y(y), (D.pass.hole / 2) * s); }
+      dimH(V0.X(Math.min(fx, xEdge)), V0.X(Math.max(fx, xEdge)), V0.Y(g.h) - 7, V0.Y(g.h - bH), V0.Y(g.h - bH), f1(g.fixFromEdge), { size: 6.5 });
+      dimH(V0.X(0), V0.X(g.w), V0.Y(g.h) - 14, V0.Y(g.h), V0.Y(g.h), f1(g.w), { size: 6.5 });
+      txt(g.title, V0.X(g.w / 2), 280 - 12, { size: 8, bold: true, align: 'center' });
+      txt('OUTSIDE FACE, VIEWED FROM OUTSIDE', V0.X(g.w / 2), 280 - 8, { size: 6, align: 'center', color: CL });
+      txt('OPENING SIDE', V0.X(xEdge) + (g.edgeSide === 'left' ? 2 : -2), V0.Y(g.h * 0.55), { size: 5.5, color: ACC, angle: 90, align: 'center' });
+    }
+    txt('SCALE 1 : 12.5', 122, 280 - 3.5, { size: 6.5, align: 'center', color: CL });
+    txt(`RIVNUT HEIGHTS FROM THE SLAB AT EACH LEG: ${D.rivnuts.R.ys.length} PER LEG, ~${f1(D.rivnuts.pitch)} PITCH, 100 OFF THE SLAB AND 100 BELOW THE HEADBOX (CEILING LINE)`, 122, 18, { size: 6.5, bold: true, align: 'center', maxWidth: 210 });
+    txt('shaded strip = 30 side-frame overlap; rivnuts on its centreline', 122, 25.5, { size: 6, align: 'center', color: ACC });
+  }
+  // hole schedule
+  {
+    const x0 = 262, y0 = 22, cw = [12, 18, 46, 18, 54];
+    const rows = [
+      ['H1', `Ø${f1(D.pass.hole)}`, 'Pass-through, both walls of leg 2', '6', 'Drill before coating; mask ring'],
+      ['H2', 'Ø9', 'M6 rivnut, outside faces', String(D.rivnuts.L.ys.length + D.rivnuts.R.ys.length), 'Drill before, fit after coating'],
+      ['H3', 'Ø12', 'M10 anchor, base plates', '4', 'All on one line'],
+      ['H4', `Ø${D.tabs.holeD}`, '14g screw, ceiling tabs', String(D.tabs.list.length * 2), 'On tab CL, in line with joist'],
+    ];
+    const tw = cw.reduce((a, b) => a + b);
+    txt('HOLE SCHEDULE', x0, y0 - 2, { size: 8, bold: true });
+    fill(SOFT); doc.rect(x0, y0, tw, 7, 'F'); pen(MED); doc.rect(x0, y0, tw, 7 + rows.length * 6);
+    let x = x0;
+    ['MARK', 'SIZE', 'PURPOSE', 'QTY', 'NOTE'].forEach((h, i) => { txt(h, x + 1.5, y0 + 4.8, { size: 6, bold: true }); x += cw[i]; });
+    rows.forEach((r, ri) => {
+      const yy = y0 + 7 + ri * 6;
+      pen(THIN); ln(x0, yy, x0 + tw, yy);
+      let xx = x0; r.forEach((c, i) => { txt(c, xx + 1.5, yy + 4.2, { size: 6.4, bold: i === 0 }); xx += cw[i]; });
+    });
+    x = x0; pen(THIN); for (let i = 0; i < cw.length - 1; i++) { x += cw[i]; ln(x, y0, x, y0 + 7 + rows.length * 6); }
+  }
+  // anchor line plan (1:10)
+  {
+    const s = 0.085, x0 = 268, y0 = 80;
+    const X = (x) => x0 + (x - D.plates.left.x0) * s, Z = (z) => y0 + z * s;
+    txt('FLOOR ANCHORS: PLAN (approx. 1 : 12)', x0, y0 - 8, { size: 8, bold: true });
+    pen(THIN, CL, [2, 1]); ln(X(D.plates.left.x0) - 4, Z(0), X(Wd) + 4, Z(0));
+    txt('OUTSIDE FACE', X(D.plates.left.x0) - 4, Z(0) - 1.5, { size: 5.5, color: CL });
+    pen(MED);
+    doc.rect(X(D.plates.left.x0), Z(0), (D.plates.left.x1 - D.plates.left.x0) * s, 110 * s);
+    doc.rect(X(D.plates.right.x0), Z(0), (D.plates.right.x1 - D.plates.right.x0) * s, 110 * s);
+    const all = [...D.plates.left.holes, ...D.plates.right.holes];
+    centreLineH(X(D.plates.left.x0) - 4, X(Wd) + 4, Z(50 + D.plates.anchorZ));
+    for (const x of all) { pen(MED); doc.circle(X(x), Z(50 + D.plates.anchorZ), 0.6); }
+    // chain from the brick face
+    let prev = Wd;
+    for (const x of all.slice().sort((a, b) => b - a)) { dimH(X(x), X(prev), Z(110) + 7, Z(50 + D.plates.anchorZ), prev === Wd ? Z(0) : Z(50 + D.plates.anchorZ), f1(prev - x), { size: 6 }); prev = x; }
+    txt('chain from the brick face', X(Wd), Z(110) + 11, { size: 5.5, color: CL, align: 'right' });
+    txt(`Anchor centres from the brick face: ${all.map((x) => f1(Wd - x)).sort((a, b) => a - b).join(' / ')}`, x0, Z(110) + 17, { size: 6.5, bold: true });
+    dimV(Z(0), Z(50 + D.plates.anchorZ), X(Wd) + 6, X(Wd), X(Wd), f1(50 + D.plates.anchorZ), { size: 6 });
+  }
+  // fixings summary
+  {
+    const x0 = 268, y0 = 128;
+    txt('FIXINGS (SUPPLIED BY INSTALLER)', x0, y0, { size: 8, bold: true });
+    [
+      '• Slab: 4 × M10 316 anchors, 80 embed, through H3. Bed the base plates on',
+      '  a bead of neutral-cure sealant so wash water cannot sit under them.',
+      `• Ceiling: ${D.tabs.list.length * 2} × 14g × 100 316 batten screws through H4, up through the`,
+      '  13 plasterboard into the joists (2 per tab, in line along the joist).',
+      `• Shutter side frames: ${D.rivnuts.L.ys.length + D.rivnuts.R.ys.length} × M6 316 screws into the rivnuts (H2).`,
+      '• Nothing is fixed into the weatherboard, the white wall or the brick.',
+      '• EPDM strip between leg 2 and the brick (supplied loose).',
+    ].forEach((l, i) => txt(l, x0, y0 + 6 + i * 3.8, { size: 6.4 }));
+  }
+
+  // =====================================================================================
+  // SHEET 4: FABRICATION AND FINISH SEQUENCE
+  // =====================================================================================
+  sheet(4);
+  {
+    // banner
+    fill(ACC); doc.rect(16, 16, 388, 15, 'F');
+    txt(black ? 'ORDER MATTERS:  1 WELD THE FRAME   >>   2 POWDER COAT   >>   3 THEN WELD THE PIPES IN' : 'ORDER MATTERS:  WELD THE FRAME   >>   PASS-THROUGHS   >>   PICKLE & PASSIVATE', 210, 26, { size: 15, bold: true, color: [255, 255, 255], align: 'center' });
+    const steps = black ? [
+      ['1', 'CUT & FORM', ['Cut items 1–7 to the parts list.', `Form the 3 ceiling tabs: S-bend ${D.tabs.rise} rise over ${D.tabs.s}, check on a flat.`, 'Deburr all cut ends.'], INK],
+      ['2', 'DRILL', ['H1: 6 × Ø39 through both walls of leg 2.', 'H2: Ø9 rivnut holes in both outside faces.', 'H3: Ø12 in base plates.  H4: Ø7 in tabs.', 'Vent holes if the coater asks.'], INK],
+      ['3', 'WELD 1: THE FRAME', ['Legs to base plates; beam on the legs;', 'tabs on the beam’s inside top edge.', 'Full seal welds. Check the top of the U', `is straight and the legs are ${f0(LL.height)} / ${f0(RL.height)} to the top.`], INK],
+      ['4', 'MASK', ['Mask a Ø70 BARE RING around every H1 hole,', 'on both faces of leg 2 (12 rings).', 'Plug H2 holes. Leave H3 / H4 open.', 'NO PIPES FITTED YET.'], BLUE],
+      ['5', 'POWDER COAT', ['Abrasive blast, stainless-compatible primer,', 'black powder coat (exterior grade).', 'Cure. Remove masking. Rings stay', 'bare stainless.'], ACC],
+      ['6', 'WELD 3a: INSIDE FERRULES', ['On the bench, butt-weld one ferrule to each', `tube (item 7, ${f1(D.pass.tube)} long).`, 'Back-purge, low heat.'], BLUE],
+      ['7', 'WELD 2: PIPES IN', ['Push each tube in from the INSIDE until the', `flange face is ${f1(D.pass.inside)} proud of the inside face.`, 'Fillet to BOTH walls inside the bare rings.', 'Low amps, stitch around; keep heat off the coat.'], BLUE],
+      ['8', 'WELD 3b: OUTSIDE FERRULES', ['Butt-weld the outside ferrules so the flange', `faces are ${f1(D.pass.outside)} proud outside: ${f1(D.pass.total)} face to face.`, 'Faces square to the tube within 0.5°.'], BLUE],
+      ['9', 'PICKLE & PASSIVATE', ['Pickling gel on the pipe welds and rings only;', 'shield the coating. Rinse well.', 'Bores clean and bright.'], INK],
+      ['10', 'FIT & CHECK', [`Fit ${D.rivnuts.L.ys.length + D.rivnuts.R.ys.length} × M6 316 rivnuts (H2).`, 'Check against the HOLD POINTS below.', 'Wrap the ferrule faces for delivery.'], INK],
+    ] : [
+      ['1', 'CUT & FORM', ['Cut items 1–7.', 'Form the 3 ceiling tabs.'], INK],
+      ['2', 'DRILL', ['H1–H4 per the hole schedule.'], INK],
+      ['3', 'WELD 1: THE FRAME', ['Legs, base plates, beam, tabs.'], INK],
+      ['4', 'WELD 3a: INSIDE FERRULES', ['Ferrule to each tube on the bench.'], BLUE],
+      ['5', 'WELD 2: PIPES IN', ['Fillet to both walls.'], BLUE],
+      ['6', 'WELD 3b: OUTSIDE FERRULES', [`${f1(D.pass.total)} face to face.`], BLUE],
+      ['7', 'PICKLE & PASSIVATE', ['All welds.'], INK],
+      ['8', 'FIT & CHECK', ['Rivnuts, hold points.'], INK],
+    ];
+    const cw = 74.5, chh = 50, gx = 3, x0 = 16, y0 = 38;
+    steps.forEach((st, i) => {
+      const col = i % 5, row = Math.floor(i / 5);
+      const x = x0 + col * (cw + gx), y = y0 + row * (chh + 6);
+      const c = st[3];
+      pen(c === INK ? MED : 0.9, c); fill([255, 255, 255]); doc.rect(x, y, cw, chh, 'FD');
+      fill(c); doc.rect(x, y, cw, 9, 'F');
+      txt(st[0], x + 3, y + 6.7, { size: 12, bold: true, color: [255, 255, 255] });
+      txt(st[1], x + 12, y + 6.4, { size: 8.5, bold: true, color: [255, 255, 255] });
+      st[2].forEach((l, k) => txt(l, x + 3, y + 15 + k * 4.2, { size: 6.6, bold: k === st[2].length - 1 && c !== INK }));
+      if (col < 4 && i < steps.length - 1) { pen(MED, CL); ln(x + cw + 0.3, y + chh / 2, x + cw + gx - 0.3, y + chh / 2); arrowHead(x + cw + gx, y + chh / 2, 1, 0, CL); }
+    });
+    // masking diagram
+    if (black) {
+      const cx = 45, cy = 180, s = 0.45;
+      txt('STEP 4 + 7: THE BARE RING', 18, 158, { size: 8, bold: true, color: BLUE });
+      pen(THICK); fill([86, 86, 90]); doc.rect(cx - 50 * s, cy - 45 * s, 100 * s, 90 * s, 'FD');
+      fill([212, 216, 222]); pen(THIN, BLUE, [1.2, 0.8]); doc.circle(cx + 15 * s, cy, 35 * s, 'FD');
+      fill([255, 255, 255]); pen(THICK); doc.circle(cx + 15 * s, cy, 19.5 * s, 'FD');
+      crossMark(cx + 15 * s, cy, 19.5 * s);
+      leader(cx + 15 * s + 29 * s, cy - 14 * s, cx + 40, cy - 16, ['Ø70 bare stainless', '(masked during coating)'], { size: 6.2, c: BLUE, tc: BLUE });
+      leader(cx + 15 * s + 12 * s, cy + 12 * s, cx + 40, cy + 4, ['Ø39 hole for the tube'], { size: 6.2 });
+      leader(cx + 40 * s, cy + 38 * s, cx + 40, cy + 18, [black ? 'black powder coat' : 'bare 316'], { size: 6.2 });
+      txt('The pipe weld (WELD 2) sits inside the ring, so the heat never', 18, 210, { size: 6.4 });
+      txt('reaches powder. Afterwards the ring and the ferrule read as one', 18, 214, { size: 6.4 });
+      txt('stainless detail on the black frame.', 18, 218, { size: 6.4 });
+    }
+    // hold points
+    {
+      const x0 = 150, y0 = 158;
+      txt('HOLD POINTS (CHECK AND RECORD)', x0, y0, { size: 8, bold: true });
+      const hp = [
+        `After WELD 1: top of the U straight within 2; legs plumb within 2 over the height; overall width ${f1(Wd)} ±2.`,
+        `After WELD 1: tab centres ${D.tabs.list.map((t) => t.fromBrick).join(' / ')} from the brick face (outside of leg 2) ±2.`,
+        'Before coating: all H1 rings masked on BOTH faces; NO tubes fitted; H2 plugged.',
+        `After WELD 2/3: flange faces ${f1(D.pass.inside)} in / ${f1(D.pass.outside)} out ±1; faces square ±0.5°; tube centres ${f1(D.pass.fromBrick)} off the brick face.`,
+        'After pickling: no scorch marks on the coat; bores clean, no weld spatter on the sealing faces.',
+        'Before delivery: ferrule faces wrapped; frame wrapped where it will bear on the slab.',
+      ];
+      hp.forEach((l, i) => {
+        pen(MED); fill([255, 255, 255]); doc.rect(x0, y0 + 4 + i * 7.5, 3.6, 3.6, 'FD');
+        txt(l, x0 + 6, y0 + 7 + i * 7.5, { size: 6.5, maxWidth: 250 });
+      });
+    }
+    // don'ts
+    {
+      const x0 = 150, y0 = 212;
+      fill([253, 236, 226]); pen(MED, ACC); doc.rect(x0, y0, 128, 32, 'FD');
+      txt('DO NOT', x0 + 3, y0 + 6, { size: 9, bold: true, color: ACC });
+      ['× weld anything to the frame after coating except the pipes, inside the rings', '× let powder or primer into the tube bores or onto the ferrule faces', '× grind the coat to make room for a weld', '× put pickling gel on the powder coat'].forEach((l, i) => txt(l, x0 + 3, y0 + 12 + i * 4.6, { size: 6.5 }));
+    }
+  }
+  return doc;
+}
+
+function fabData() {
+  const L = layout;
+  if (!L || L.mount !== 'face' || !L.uBeam || !L.postL || !L.dumpJamb) return null;
+  const { W, H } = dimsM();
+  const j = L.dumpJamb, p = L.postL, b = L.uBeam, P = POST_C;
+  const x0 = p.x0, mm1 = (v) => Math.round(v * 10000) / 10;
+  const yR = j.yb, yL = p.yb;
+  const width = mm1(W - x0);
+  const sz = TC.sizes['1.5'];
+  const plateT = 8;
+  // tab bottom-surface profile (u along the tab from its start, v up from the beam top), same erf S as the model
+  const sig = 0.012, c = P.tabS / 2, ea = erf(-c / sig), ez = erf(c / sig);
+  const S = (u) => (u >= P.tabS ? 1 : (erf((u - c) / sig) - ea) / (ez - ea));
+  const profile = Array.from({ length: 41 }, (_, i) => { const u = (P.tabL * i) / 40; return [mm1(u), mm1(P.rise * S(u))]; });
+  const leftHoles = [mm1(0.002 + 0.016 - x0), mm1(p.x1 - 0.014 - x0)];
+  const rightHoles = [mm1(j.x0 + 0.015 - x0), mm1(j.x1 - 0.014 - x0)];
+  const gf = L.guideFix || {};
+  const tube = mm1(0.025 + (j.z1 - j.z0) + j.outLen) - 2 * 21.5;
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    finish: cfg.shutter.uFinish === 'black' ? 'black' : 'ss',
+    openingW: cfg.nook.width,
+    width, top: mm1(b.y1 - yR), slabStepL: mm1(yL - yR), plateT,
+    beam: { h: P.beamH * 1000, d: P.d * 1000 },
+    ceiling: { plaster: mm1(H - yR) },
+    leftLeg: { w: P.left * 1000, x0: 0, x1: mm1(p.x1 - x0), height: mm1(b.y1 - yL), cut: mm1(b.y0 - yL) - plateT },
+    rightLeg: { w: P.right * 1000, x0: mm1(j.x0 - x0), x1: width, height: mm1(b.y1 - yR), cut: mm1(b.y0 - yR) - plateT },
+    tabs: {
+      list: (cfg.nook.joists || []).map((jm) => ({ fromBrick: jm, x: mm1(W - jm / 1000 - x0) })).filter((t) => t.x - 22.5 >= 0 && t.x + 22.5 <= width),
+      w: P.tabW * 1000, l: P.tabL * 1000, s: P.tabS * 1000, rise: P.rise * 1000, t: P.tabT * 1000, weld: 12, holes: P.screws.map((u) => u * 1000), holeD: 7, profile,
+    },
+    pass: {
+      x: mm1(j.xc - x0), fromBrick: mm1(W - j.xc), ys: [0, 1, 2].map((i) => mm1(j.pt - yR + i * PASS_PITCH)),
+      od: 38.1, wall: 1.65, hole: 39, inside: 25, outside: mm1(j.outLen), total: mm1(0.025 + (j.z1 - j.z0) + j.outLen), tube: Math.round(tube * 10) / 10,
+      ferrule: 21.5, flangeOD: 50.5, clampOD: sz.clampOD * 1000, clampW: sz.clampW * 1000, frameD: mm1(L.frameD), overlap: P.overlap * 1000, ring: 70,
+    },
+    plates: {
+      left: { x0: mm1(0.002 - x0), x1: mm1(p.x1 - x0), notchZ: mm1(p.z1 - (dimsM().D - 0.001)), holes: leftHoles },
+      right: { x0: mm1(j.x0 - x0), x1: width, holes: rightHoles },
+      anchorZ: 34,
+    },
+    rivnuts: {
+      L: { x: mm1(L.guides[0].fixX - x0), ys: (gf.L || []).map((y) => mm1(y - yL)) },
+      R: { x: mm1(L.guides[1].fixX - x0), ys: (gf.R || []).map((y) => mm1(y - yR)) },
+      pitch: mm1(gf.pitch || 0),
+    },
+  };
+}
+let jspdfLoading = null;
+function loadJsPdf() {
+  if (window.jspdf?.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  jspdfLoading ||= new Promise((res, rej) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js';
+    sc.onload = () => (window.jspdf?.jsPDF ? res(window.jspdf.jsPDF) : rej(new Error('jsPDF did not load')));
+    sc.onerror = () => { jspdfLoading = null; rej(new Error('Could not load the PDF library')); };
+    document.head.append(sc);
+  });
+  return jspdfLoading;
+}
+async function exportFabPdf(btn) {
+  const D = fabData();
+  if (!D) return;
+  const old = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Drawing the sheets…'; }
+  try {
+    const jsPDF = await loadJsPdf();
+    const doc = makeFabPdf(jsPDF, D);
+    doc.save(`U-frame-fabrication-A3-${D.date}.pdf`);
+    if (btn) btn.textContent = 'Saved: U-frame drawings (A3 PDF)';
+  } catch (e) {
+    if (btn) btn.textContent = 'PDF failed: ' + e.message;
+  } finally {
+    if (btn) setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 2500);
+  }
+}
+window.__fab = { fabData, loadJsPdf, makeFabPdf: (...a) => makeFabPdf(...a) };
 
 function buildPanel() {
   syncers.length = 0;

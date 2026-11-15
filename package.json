@@ -1,9 +1,10 @@
 {
   "name": "brew-nook-shutter",
   "private": true,
-  "description": "3D planner for a motorised roller shutter on an outdoor brewing nook",
+  "description": "3D planner for a manual roller shutter and stainless U-frame on an outdoor brewing nook",
   "devDependencies": {
     "puppeteer-core": "^23.11.1",
-    "three": "^0.169.0"
+    "three": "^0.169.0",
+    "jspdf": "^2.5.2"
   }
 }

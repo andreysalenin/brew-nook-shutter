@@ -20,6 +20,7 @@ for vid in ids:
     code = re.sub(r'^export\s+\{[^}]*\};?\s*$', '', code, flags=re.M)
     parts.append(f"VESSEL_MODULES[{vid!r}] = (() => {{\n{code}\nreturn {{ meta: typeof meta !== 'undefined' ? meta : {{}}, build, defaultOptions: typeof defaultOptions !== 'undefined' ? defaultOptions : {{}} }};\n}})();")
 js = js.replace('/*__VESSELS__*/', '\n'.join(parts))
+js = js.replace('/*__FABPDF__*/', (ROOT / 'src/fabpdf.js').read_text())
 print('vessels inlined:', ids)
 
 VER = '0.169.0'
@@ -63,6 +64,7 @@ for name, imap in MAPS.items():
 </body>
 </html>
 '''
+    html = html.replace('__JSPDF_URL__', 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js' if name == 'cdn' else '/node_modules/jspdf/dist/jspdf.umd.min.js')
     out = ROOT / ('index.html' if name == 'cdn' else 'test.html')
     out.write_text(html)
     print(out, len(html))
